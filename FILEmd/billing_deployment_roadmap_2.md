@@ -1,12 +1,12 @@
 # PHƯƠNG HƯỚNG TRIỂN KHAI — Đề 18: Hệ thống Quản lý Hóa đơn / Billing
 
-> **Phiên bản:** DESIGN FREEZE — CP0 PASS ngày 05/10/2026; YC2/CP2 PASS ngày 05/10/2026 sau kiểm thử runtime
+> **Phiên bản:** DESIGN FREEZE — CP0 PASS; YC2/CP2 PASS; YC3/CP3 PASS ngày 05/10/2026 sau kiểm thử runtime
 > **Vai trò:** Senior Software Architect + DevOps Engineer
 > **Phạm vi tài liệu:** phân tích, thiết kế, roadmap và evidence gate. YC2 source code/Compose đã được triển khai; trạng thái checkpoint được ghi tại CP2 và trong execution history.
 > **Căn cứ:** 3 ảnh đề bài (Yêu cầu chung, Tiêu chí đánh giá, Đề 18) và phiên bản phân tích trước.
 > **Quy ước:** ⚠️ **CẦN XÁC MINH** = chưa kiểm chứng được trên máy thật. Các mục này phải được kiểm tra ở CP0 hoặc ở checkpoint ghi kèm, không được coi là đã chạy.
 >
-> **Trạng thái:** DESIGN FREEZE đã chốt. CP0, CP1a và YC2/CP2 **PASS**. CP2 xác minh ứng dụng Billing chạy cùng PostgreSQL và pgAdmin; YC3 chưa bắt đầu.
+> **Trạng thái:** DESIGN FREEZE đã chốt. CP0, CP1a, YC2/CP2 và YC3/CP3 **PASS**. YC3 xác minh Nginx HTTPS, proxy, CSP, headers, rate limit, logs và network/port runtime. YC4 chưa bắt đầu.
 
 ---
 
@@ -592,7 +592,7 @@ flowchart LR
 |---|---|---|
 | postgres | `pg_isready` tại `/usr/bin/pg_isready` đã thấy trong image; áp dụng cho service DB ở YC2 và kiểm tra readiness khi chạy | — |
 | web | Project image chưa build; dự kiến HTTP GET `/health` bằng Node built-in, xác minh ở YC2. Node base có shell/`wget` nhưng project image chưa được kiểm tra | postgres: `service_healthy` nếu Postgres healthcheck đạt; nếu không dùng `service_started` và app retry/readiness |
-| nginx | Image có `/usr/bin/wget` và `/usr/bin/curl`; kiểm tra endpoint `/nginx-health` sau khi cấu hình được thêm tại CP3 | web: `service_healthy` nếu đã xác minh; nếu không dùng `service_started` |
+| nginx | Pinned image `nginxinc/nginx-unprivileged:1.30.5-alpine`, Config.User 101; `/usr/bin/wget` healthcheck gọi `http://127.0.0.1:8080/nginx-health`; CP3 runtime healthy | web: `service_healthy` |
 | pgadmin | Image có `/usr/bin/wget`; auto-registration đã xác minh. `/misc/ping` chưa trả response trong probe CP0; **không bật healthcheck này**, xác minh UI/readiness tại CP2 | postgres: `service_healthy` nếu Postgres healthcheck đạt; nếu không dùng `service_started` |
 | prometheus | Image có `/bin/wget`; không declared HEALTHCHECK. `/-/ready` có thể dùng khi chạy service tại CP4 và xác minh response | — |
 | grafana | Image có `/usr/bin/wget`; `/api/health` trả `database: ok` trong probe và file datasource provisioning được nạp | prometheus: `service_started` hoặc healthcheck đã xác minh |
@@ -974,15 +974,22 @@ flowchart LR
 - [x] PostgreSQL không có host port mapping 5432
 
 ### CP3 — Nginx → Commit 1
-- [ ] `https://localhost` hiển thị web; `http://localhost` → `301`
-- [ ] `.env.example` và `.env` đặt `SESSION_COOKIE_SECURE=true`; recreate `web`; cookie phản hồi có thuộc tính `Secure`, session login/logout hoạt động qua HTTPS sau Nginx (`trust proxy` nhận `X-Forwarded-Proto`)
-- [ ] Đủ 6 security headers; `Server` không lộ version
-- [ ] `127.0.0.1:8000` không còn truy cập được; web chỉ còn trên `app_net` + `db_net`
-- [ ] `/metrics` và `/health` từ ngoài trả `404`; login quá giới hạn trả `429`. App `/metrics` chưa được triển khai tại Commit 1; Nginx chỉ chặn đường dẫn
-- [ ] Console trình duyệt **không có lỗi CSP**; mọi màn hình hoạt động; không inline JS, inline handler, inline style, CDN hoặc Google Fonts
-- [ ] `nginx -t` OK
-- [ ] `git diff --stat` chỉ gồm nginx, gen-cert, các thay đổi compose liên quan, README phần Nginx
-- [ ] **Đã tạo Commit 1 + tag `commit-1-nginx`**
+- [x] Pinned Nginx `nginxinc/nginx-unprivileged:1.30.5-alpine` chạy UID 101; `nginx -t` và `/nginx-health` PASS; service healthy
+- [x] Compose có đúng bốn service `postgres`, `web`, `pgadmin`, `nginx`; không có service monitoring/logging
+- [x] Runtime network đúng: edge nginx; app nginx+web; db web+postgres+pgadmin; admin pgAdmin; internal flags đúng; không có `monitoring_net`
+- [x] Port runtime đúng: Nginx `0.0.0.0:80->8080`, `0.0.0.0:443->8443`; pgAdmin `127.0.0.1:5050`; web/Postgres không publish; truy cập `127.0.0.1:8000` bị từ chối
+- [x] Browser/HTTP thực: `http://localhost/` trả 301 tới HTTPS; HTTPS và `billing.local` trả 200 qua Nginx
+- [x] Certificate tự ký có CN localhost, SAN localhost/billing.local; certificate Nginx phục vụ khớp fingerprint file; TLS 1.2 và 1.3 handshake thành công
+- [x] Sáu security headers thực tế được kiểm tra; HTTP/HTTPS đều `Server: nginx` không lộ version
+- [x] CSP không có violation trên login, dashboard, customer, invoice và payment screens; JS/CSS self-hosted
+- [x] Runtime echo probe qua `proxy-headers.inc` xác nhận Host, `X-Real-IP`, `X-Forwarded-For` được nối peer IP, X-Request-Id do Nginx sinh; Secure cookie qua HTTPS xác nhận `X-Forwarded-Proto=https`
+- [x] Rate limit login tạo request 429 thật; request thường vẫn hoạt động sau burst
+- [x] JSON access log parse được đủ 9 fields; request ID response khớp `request_id` trong log; không log credential/cookie
+- [x] Login/session/logout qua HTTPS; cookie `billing.sid` Secure, HttpOnly, SameSite=Strict, Path=/, expiry 28,800 giây
+- [x] Public `/health` và `/metrics` trả 404; app `/metrics` và Nginx `stub_status` không được triển khai
+- [x] CP2 E2E suite PASS qua HTTPS sau Nginx; business/auth logic và DB roles không đổi
+- [x] `nginx/`, cert scripts, Compose, smoke test và evidence được kiểm tra scope; private key không được track
+- [ ] Tạo Commit 1 và annotated tag `commit-1-nginx` sau staged diff/security verification
 
 ### CP4 — Monitoring → Commit 2
 - [ ] Targets **UP**: `prometheus`, `cadvisor`, `nginx`, `web`, `postgres` (bắt buộc); `node` (phụ)
@@ -1156,23 +1163,23 @@ flowchart LR
 | FR/NFR nhất quán | Được rà soát trên tài liệu | CSP nghiệm thu ở YC3; log từ YC2; metrics chỉ từ YC4 |
 | BR nhất quán | Được rà soát trên tài liệu | Sequence sinh số duy nhất, tăng dần, có khoảng trống; tiền `NUMERIC`, transaction, khóa thanh toán; chưa chạy test |
 | Auth nhất quán | Được chốt ở mức thiết kế | express-session, PostgreSQL store, bcrypt, không JWT; cookie chuyển theo `SESSION_COOKIE_SECURE` |
-| Session YC2/YC3 | Được chốt ở mức thiết kế | YC2 HTTP/false; từ Commit 1 HTTPS/true; cần xác minh ở CP2/CP3 |
-| Network / H2 | CP0 probe PASS; project membership chờ YC2–YC4/CP6 | Scratch network flags và loopback publish đã được kiểm tra; membership project và port map được nghiệm thu khi project networks tồn tại |
+| Session YC2/YC3 | CP2/CP3 runtime PASS | YC2 HTTP/false; YC3 HTTPS/true; cookie Secure/HttpOnly/SameSite/Path/8h được kiểm tra |
+| Network / H2 | YC3 runtime membership/flags PASS | `edge_net`, `app_net`, `db_net`, `admin_net` và host mappings được inspect; không kết luận Internet egress |
 | Invoice numbering | Được chốt ở mức thiết kế | `INV-YYYY-NNNNNN`, sequence PostgreSQL, không reset theo năm, có thể có khoảng trống |
 | Docker images | CP0 pull PASS | 12 upstream/base tags đã pull, digest ghi ở Phần 5; service runtime chưa triển khai. Project-built web image chưa tạo |
 | Image count | Nhất quán trong thiết kế | **12 upstream/base images**; `node:24.21.0-alpine` là base để build `web`; Compose tạo thêm **1 project-built image** cho `web` ở YC2, không phải upstream image và không pull ở CP0 |
 | `/metrics` theo commit | Được chốt ở mức thiết kế | Chỉ YC4/Commit 2; không có ở YC2 hoặc Commit 1 |
 | `stub_status` theo commit | Được chốt ở mức thiết kế | Chỉ YC4/Commit 2; Commit 1 độc lập monitoring |
-| Nginx | Được chốt ở mức thiết kế | Proxy/TLS/headers/CSP/rate-limit ở Commit 1; app `/metrics` và `stub_status` bị chặn/không mở cho người ngoài |
+| Nginx | CP3 runtime PASS | Proxy/TLS/headers/CSP/rate-limit/JSON log/health verified; không app `/metrics`, không `stub_status` |
 | Monitoring 3 nhóm | Chờ CP0/CP4 | Container/Web/DB đã ánh xạ; target, metric names và dữ liệu dashboard chưa xác minh |
 | Logging | Compatibility CP0 PASS; project CP5 chưa chạy | Promtail EOL được ghi nhận; sample push/query qua Loki đạt; project labels/config và ≥3 LogQL thật vẫn thuộc CP5 |
 | Hardening | Đủ tiêu chí ở mức thiết kế | H1–H6 là mục tiêu bắt buộc; chỉ đánh dấu đạt sau test và evidence CP6 |
 | Healthcheck | CP0 inventory PASS; service health chờ YC2–YC5 | Tool/declared healthcheck được ghi ở mục 3.12; endpoint chưa trả response không được biến thành custom healthcheck |
 | pgAdmin credential | CP0 PASS ngày 2026-10-05 | pgAdmin UI/import/runtime password/DB connection/table đều đạt với probe tạm; không có password trong JSON |
-| Evidence | Được lập kế hoạch | ID B/T ánh xạ rubric; chưa có ảnh thực tế |
-| README | Được lập kế hoạch | 16 mục bao gồm cookie theo giai đoạn và H4; sẽ kiểm tra clone sạch ở CP-Final |
-| Git commit plan | Được chốt ở mức thiết kế | Commit 1=Nginx, 2=Monitoring, 3=Logging; chưa có commit thực tế |
-| Môi trường | CP0 PASS (2026-10-05) | Docker Desktop 4.88.1/Engine 29.7.2; Compose CLI v5.4.0 official; toàn bộ probe Prompt 1 có evidence, gồm pgAdmin runtime credential. YC1a chưa bắt đầu |
+| Evidence | CP3 runtime evidence captured | `RQ3-01-https-browser.png` và `RQ3-02-runtime-verification.png`; secret-free |
+| README | Đã cập nhật sau CP3 | HTTPS/redirect, certificate, secure cookie, Nginx-only ingress và local test instructions |
+| Git commit plan | Commit 1 candidate qua CP3 | Chỉ tạo `commit-1-nginx` sau staged scope check; YC4 chưa bắt đầu |
+| Môi trường | CP0–CP3 runtime gates PASS | Docker Desktop/Compose; YC1a, YC2, YC3 đã triển khai; YC4 chưa bắt đầu |
 
 ## Self-audit — 10 câu hỏi
 
@@ -1217,9 +1224,8 @@ flowchart LR
 - Sau CP0 PASS, trạng thái chuyển sang DESIGN FREEZE — READY TO IMPLEMENT; “FINAL” trong tên Final Architecture Review vẫn chỉ nghĩa finalized design review.
 - Giữ nguyên session cookie theo giai đoạn, DB least privilege, `/metrics` và `stub_status` ở Commit 2, CSP ở CP3; đồng bộ CP6/evidence/README/final review.
 - Các metric/dashboard Billing, LogQL project, pgAdmin DB connection và health/readiness service chưa chạy vẫn chờ checkpoint tương ứng; không tuyên bố application runtime PASS.
+- YC3/CP3 PASS ngày 2026-10-05: pinned Nginx, SAN certificate, HTTP redirect, HTTPS/TLS, headers/CSP, Secure session, login rate limiting, JSON access logs/request ID, health, network/ports và HTTPS CP2 regression được kiểm tra runtime; evidence ở `docs/evidence/RQ3-*`. YC4 chưa bắt đầu.
 
 ## Kết luận cuối
 
-DESIGN FREEZE — READY TO IMPLEMENT.
-CP0 PASS ngày 2026-10-05; không còn lỗi kiến trúc đã biết trong phạm vi rà soát tài liệu.
-Chưa triển khai ứng dụng Billing; chưa bắt đầu YC1a/YC2.
+DESIGN FREEZE — CP0, CP1a, CP2 và CP3 PASS. YC3 runtime evidence đã được ghi nhận; Commit 1/tag `commit-1-nginx` là bước Git tiếp theo sau staged verification. YC4 CHƯA BẮT ĐẦU.

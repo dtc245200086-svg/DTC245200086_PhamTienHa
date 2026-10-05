@@ -42,17 +42,37 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:8000:3000"
     networks:
       - db_net
-      - admin_net
+      - app_net
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 15s
+    restart: unless-stopped
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.30.5-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - edge_net
+      - app_net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
     restart: unless-stopped
 
   pgadmin:
@@ -76,6 +96,10 @@ services:
     restart: unless-stopped
 
 networks:
+  edge_net:
+    internal: false
+  app_net:
+    internal: true
   db_net:
     internal: true
   admin_net:

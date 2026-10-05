@@ -5,6 +5,8 @@ const baseUrl = process.env.CP2_BASE_URL || 'http://127.0.0.1:8000';
 const adminPassword = process.env.ADMIN_PASSWORD;
 const staffPassword = process.env.STAFF_PASSWORD;
 const persistenceName = process.env.CP2_PERSISTENCE_NAME;
+const secureCookieExpected = process.env.CP2_EXPECT_SECURE_COOKIE === 'true';
+const publicHealthBlocked = process.env.CP2_EXPECT_PUBLIC_HEALTH_BLOCKED === 'true';
 
 if (!adminPassword || !staffPassword) {
   throw new Error('ADMIN_PASSWORD and STAFF_PASSWORD must be set in the test environment.');
@@ -58,7 +60,11 @@ async function login(client, username, password, role) {
   const expiresAt = Date.parse(expires[1]);
   const remainingMs = expiresAt - Date.now();
   assert.ok(remainingMs > 7.9 * 60 * 60 * 1000 && remainingMs <= 8 * 60 * 60 * 1000, 'session cookie must expire in eight hours');
-  assert.doesNotMatch(client.setCookie, /;\s*Secure(?:;|$)/i);
+  if (secureCookieExpected) {
+    assert.match(client.setCookie, /;\s*Secure(?:;|$)/i);
+  } else {
+    assert.doesNotMatch(client.setCookie, /;\s*Secure(?:;|$)/i);
+  }
 }
 
 async function persistenceOnly() {
@@ -87,10 +93,17 @@ async function run() {
   assert.equal(Object.hasOwn(failedLogin.error, 'password_hash'), false);
   checks.push('unauthenticated access and generic failed login');
 
-  const health = checkStatus(await fetch(`${baseUrl}/health`).then(async (response) => ({ response, payload: await response.json() })), 200, '/health');
-  assert.equal(health.status, 'ok');
-  assert.equal(health.db, 'ok');
-  checks.push('health');
+  const healthResponse = await fetch(`${baseUrl}/health`);
+  if (publicHealthBlocked) {
+    assert.equal(healthResponse.status, 404, 'public /health must be hidden behind Nginx');
+    checks.push('public health endpoint blocked');
+  } else {
+    const health = await healthResponse.json();
+    assert.equal(healthResponse.status, 200);
+    assert.equal(health.status, 'ok');
+    assert.equal(health.db, 'ok');
+    checks.push('health');
+  }
 
   const home = await fetch(baseUrl);
   assert.equal(home.status, 200);
