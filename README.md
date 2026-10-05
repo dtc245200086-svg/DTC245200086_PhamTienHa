@@ -19,7 +19,7 @@
 - YC2 / CP2: **PASS**, baseline `base-app` có ứng dụng, PostgreSQL và pgAdmin.
 - YC3 / CP3: **PASS**; website qua Nginx HTTPS tự ký, redirect, security headers/CSP, rate limit và JSON access log đã được kiểm tra runtime.
 - YC4 / CP4 kỹ thuật: **PASS**, Commit 2/tag `commit-2-monitoring`=`7502aa7`; support commit=`5743031` là HEAD. Working tree clean; support commit chưa push.
-- YC5 chưa bắt đầu; chưa có Loki, Promtail hay LogQL. CP6 hardening tổng thể và CP7 báo cáo/demo vẫn còn.
+- YC5 / CP5: **PASS**; Loki, Promtail, Grafana Loki datasource, LogQL Q2–Q4, persistence and YC2–YC4 quick regression verified. Commit 3/tag `commit-3-logging` records YC5. CP6 hardening and CP7 report/demo remain.
 
 ## Công nghệ
 
@@ -76,7 +76,11 @@ Hoặc trên Bash có `curl` và `jq`:
 bash scripts/load-test.sh
 ```
 
-Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag vẫn ở `7502aa7`; HEAD là support commit `5743031` (`docs: finalize YC4 monitoring records and evidence`). Support commit chưa push. YC5 (Loki/Promtail) chưa bắt đầu.
+Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag `commit-2-monitoring` vẫn ở `7502aa7`; Commit 3/tag `commit-3-logging` ghi nhận phần logging YC5. Không push.
+
+## Logging YC5 / CP5
+
+Loki và Promtail chạy trong `monitoring_net`; Promtail chỉ giữ Docker targets có Compose project `billing`. Grafana datasource `Loki` được provision từ file. Mở Grafana → Explore → Loki và dùng các query đã kiểm chứng trong [logging/logql-queries.md](logging/logql-queries.md). Q2 (login failed), Q3 (Nginx 4xx/5xx) và Q4 (invoice/payment) đều trả log thật. Log labels cho stream mới là `service`, `container`, `stream`; Loki giữ lại một số log cũ có label `service_name` cho đến khi hết retention 72 giờ. Promtail 3.6.11 được dùng vì yêu cầu bài tập; upstream đã EOL từ 02/03/2026.
 
 ## Kiểm thử YC3/CP3
 

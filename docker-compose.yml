@@ -182,6 +182,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  loki:
+    image: grafana/loki:3.7.8
+    volumes:
+      - ./logging/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring_net
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.6.11
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./logging/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/run/promtail
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - monitoring_net
+    restart: unless-stopped
+
 networks:
   edge_net:
     internal: false
@@ -199,3 +223,5 @@ volumes:
   pgadmin_data:
   prometheus_data:
   grafana_data:
+  loki_data:
+  promtail_positions:
