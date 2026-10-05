@@ -231,3 +231,13 @@
 - **Evidence:** RQ5-01, RQ5-03, RQ5-04, RQ5-05 and optional RQ5-06 were already present and inspected. Existing RQ5-02 showed the Label Browser still loading, so it was replaced with a real loaded label-browser screenshot at the same ID. No duplicate evidence file was added.
 - **Files modified during this resume:** `FILEmd/billing_deployment_roadmap_2.md`, `README.md`, `docs/evidence/README.md`, `logging/logql-queries.md`, and this appended history entry; `docs/evidence/RQ5-02-loki-label-browser.png` was replaced. Pre-existing Compose, Grafana dashboard/datasource, logging configs, and other RQ5 images were retained.
 - **Checkpoint result:** CP5 = PASS. Commit 3 message: `feat(logging): centralized logging with Loki, Promtail and LogQL queries`; annotated tag: `commit-3-logging`. No push. YC6/CP6 and YC7/CP7 remain incomplete; YC4 final screenshots RQ4-02/03/04 are still outstanding.
+
+## 2026-10-06 — Documentation Sync Before CP6
+
+- **Scope:** documentation sync only. No CP6/H1–H6, runtime, source, Compose architecture, monitoring, logging, or evidence-generation work was performed.
+- **Files synced:** `README.md` and `FILEmd/billing_deployment_roadmap_2.md`. Appended this entry only; all prior history entries, including the 2026-10-05 Prompt 5C and the YC5 entry, remain unchanged. Evidence index and LogQL documentation were checked and already consistent, so they were not edited.
+- **Git state at sync:** branch `main`; current HEAD=`3ff709cee127ce763ee45fa7477e3b8372d8318a`; worktree was clean before documentation edits and is now dirty with documentation-only changes. No documentation-sync commit was created.
+- **Immutable refs verified:** `base-app=aa0d39222eddec12c41e7379550952ee83085a5e`; `commit-1-nginx=d179090de811925ee6b505311edb5c956fea4b98`; `commit-2-monitoring=7502aa7f067f99f6b976bc553bdc021b79561f48`; `commit-3-logging=3ff709cee127ce763ee45fa7477e3b8372d8318a`. Historical support commits remain `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` and `25944eae9dd7546c31c2083f1e3b0400d43919f8`; neither is current HEAD.
+- **Status preserved:** CP0, CP1a, CP2, CP3, CP4 technical and CP5 remain PASS. YC6/CP6 and YC7/CP7 have not run. YC4 final evidence still lacks RQ4-02, RQ4-03 and RQ4-04. RQ5-01…RQ5-05 remain captured; RQ5-06 remains optional.
+- **Validation:** source docs, evidence index and LogQL state were cross-checked. Git tags and hashes were inspected before edits. No runtime tests were run because this prompt is documentation-only. No tag movement, amend, rebase, or push occurred.
+- **Result:** Documentation sync is in progress/uncommitted; no CP6 result is claimed. Current HEAD remains `3ff709cee127ce763ee45fa7477e3b8372d8318a`.
