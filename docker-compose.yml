@@ -1,0 +1,86 @@
+name: billing
+
+services:
+  postgres:
+    image: postgres:16.15-trixie
+    environment:
+      POSTGRES_DB: billing
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      BILLING_APP_PASSWORD: ${BILLING_APP_PASSWORD:?Set BILLING_APP_PASSWORD in .env}
+      BILLING_READONLY_PASSWORD: ${BILLING_READONLY_PASSWORD:?Set BILLING_READONLY_PASSWORD in .env}
+      EXPORTER_PASSWORD: ${EXPORTER_PASSWORD:?Set EXPORTER_PASSWORD in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      STAFF_PASSWORD: ${STAFF_PASSWORD:?Set STAFF_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: billing
+      DB_USER: billing_app
+      DB_PASSWORD: ${BILLING_APP_PASSWORD:?Set BILLING_APP_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:3000"
+    networks:
+      - db_net
+      - admin_net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:9.18.0
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?Set PGADMIN_DEFAULT_EMAIL in .env}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Set PGADMIN_DEFAULT_PASSWORD in .env}
+      PGADMIN_LISTEN_PORT: "5050"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5050:5050"
+    networks:
+      - db_net
+      - admin_net
+    restart: unless-stopped
+
+networks:
+  db_net:
+    internal: true
+  admin_net:
+    internal: false
+
+volumes:
+  pgdata:
+  pgadmin_data:

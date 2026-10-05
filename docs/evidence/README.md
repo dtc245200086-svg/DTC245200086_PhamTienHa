@@ -1,5 +1,9 @@
 # Evidence
 
-Add checkpoint evidence here only after the corresponding check has actually passed. Use the naming convention from the Design Freeze, for example `RQ2-01-service-readiness.png`.
+Checkpoint evidence is added only after the corresponding runtime check passes. Files use the Design Freeze naming convention `RQ{n}-{nn}-{description}.png`.
 
-No implementation evidence has been captured yet. Do not store `.env` files, credentials, private keys, or database dumps in this directory.
+| File | Verified result |
+|---|---|
+| `RQ2-07-pgadmin-runtime.png` | pgAdmin logged in; imported `Billing PostgreSQL` connected to database `billing` as `billing_readonly`; password was entered at runtime and not saved. |
+
+Never store `.env` files, passwords, session secrets, private keys, or database dumps in this directory.

@@ -10,44 +10,56 @@
 | Lớp | CNTT K23G |
 | GVHD | Vũ Việt Dũng |
 | GitHub username | `dtc245200086-svg` |
-| Repository dự kiến | `DTC245200086_PhamTienHa` |
-| Remote đã cấu hình | `https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa.git` (chưa xác minh push) |
+| Repository | `DTC245200086_PhamTienHa` |
 
-## Mục tiêu
+## Trạng thái
 
-Triển khai theo Design Freeze và roadmap hiện có một hệ thống quản lý khách hàng, hóa đơn và thanh toán; đồng thời đáp ứng các checkpoint về reverse proxy, giám sát, logging, hardening và báo cáo.
+- CP0: **PASS**; prerequisite và compatibility probes được ghi trong [AI Execution History](docs/AI_EXECUTION_HISTORY.md).
+- YC1a / CP1a: **PASS**, Commit 0a đã push lên `main`.
+- YC2 / CP2: **PASS**, ứng dụng, PostgreSQL và pgAdmin đã được kiểm tra runtime; Commit 0b có tag `base-app`.
+- YC3 chưa bắt đầu. Phạm vi đang chạy chỉ gồm `web`, `postgres` và `pgadmin`; chưa cấu hình reverse proxy, HTTPS, metrics hay logging tập trung.
 
-## Stack dự kiến
+## Công nghệ trong YC2
 
-- Node.js 24, Express, `pg` và frontend HTML/CSS/JavaScript thuần.
-- PostgreSQL 16 và pgAdmin 4.
-- Docker Compose; Nginx unprivileged; Prometheus, Grafana, cAdvisor và exporters; Loki và Promtail.
-- Chi tiết kiến trúc và phiên bản image được ghi trong [Design Freeze](FILEmd/billing_deployment_roadmap_2.md).
+- Node.js 24, Express, `pg`, `express-session`, `connect-pg-simple` và `bcryptjs`.
+- Frontend HTML/CSS/JavaScript thuần.
+- PostgreSQL 16.15, pgAdmin 4 và Docker Compose.
+- Thiết kế/roadmap đầy đủ ở [Design Freeze](FILEmd/billing_deployment_roadmap_2.md).
 
-## Trạng thái triển khai
+## Chạy cục bộ trên Windows
 
-- CP0: **PASS**, ngày 05/10/2026; prerequisite và compatibility probes đã được ghi trong [AI Execution History](docs/AI_EXECUTION_HISTORY.md).
-- YC1a / CP1a: repository foundation.
-- Billing application chưa được triển khai. Chưa có backend, frontend, database implementation, hay `docker-compose.yml` Billing.
-- Nginx, monitoring và logging cho Billing chưa được triển khai.
-- Tài liệu hiện có trong [FILEmd](FILEmd/) là tài liệu thiết kế/roadmap, không phải ứng dụng chạy được.
+Cần Docker Desktop với Linux containers và Docker Compose v2+. Từ thư mục repository:
 
-## Roadmap YC1-YC7
+```powershell
+Copy-Item .env.example .env
+```
 
-1. YC1a: khởi tạo repository foundation; YC1 final: hoàn thiện README và repo sau khi triển khai.
-2. YC2: ứng dụng nền, PostgreSQL và pgAdmin.
-3. YC3: Nginx reverse proxy và HTTPS/security headers.
-4. YC4: Prometheus, Grafana và monitoring.
-5. YC5: Loki, Promtail và LogQL.
-6. YC6: hardening và kiểm thử hồi quy.
-7. YC7: báo cáo và demo.
+Sửa `.env`: thay mọi giá trị `CHANGE_ME` bằng credential riêng, mạnh; `SESSION_SECRET` phải có ít nhất 32 ký tự ngẫu nhiên. Không commit `.env`.
 
-Mỗi checkpoint là cổng chặn riêng. Hoàn tất YC1a không có nghĩa các thành phần YC2-YC7 đã tồn tại hoặc hoạt động.
+```powershell
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
 
-## CP0
+- Web: http://127.0.0.1:8000
+- pgAdmin: http://127.0.0.1:5050
+- PostgreSQL không publish cổng lên host. pgAdmin kết nối nội bộ tới `postgres:5432` trên database `billing`.
 
-CP0 **PASS** ngày 05/10/2026. Kết quả chi tiết, kể cả xác minh pgAdmin runtime credential, nằm trong [AI Execution History](docs/AI_EXECUTION_HISTORY.md). YC1a chỉ sử dụng kết quả CP0 đã ghi; không chạy lại toàn bộ CP0.
+Tài khoản ứng dụng `admin` và `staff` dùng mật khẩu `ADMIN_PASSWORD` và `STAFF_PASSWORD` từ `.env`. pgAdmin tự đăng ký `Billing PostgreSQL` từ [servers.json](pgadmin/servers.json); khi kết nối, nhập `BILLING_READONLY_PASSWORD` tại prompt và để **Save Password** bỏ chọn. `billing_readonly` chỉ đọc các bảng nghiệp vụ.
 
-## Trạng thái chạy
+Database seed và đổi mật khẩu: script trong `db/init` chỉ chạy khi volume PostgreSQL được tạo lần đầu. Thay mật khẩu trong `.env` không tự đổi credential hoặc mật khẩu người dùng đã lưu trong volume. `docker compose down` giữ dữ liệu; không dùng `docker compose down -v` nếu cần bảo toàn dữ liệu.
 
-> Repository hiện là bộ khung tài liệu. Chưa có lệnh khởi chạy ứng dụng Billing; không chạy `docker compose up` cho Billing trước khi YC2 được thực hiện và kiểm tra.
+## Kiểm thử CP2
+
+Với Node.js 24, đặt `ADMIN_PASSWORD` và `STAFF_PASSWORD` trong môi trường PowerShell theo giá trị trong `.env`, sau đó chạy:
+
+```powershell
+npm run test:cp2 --prefix app
+```
+
+Smoke test gọi API runtime tại `http://127.0.0.1:8000`, tạo dữ liệu kiểm thử và kiểm tra auth/session, customer, invoice, payment, cancellation, dashboard, validation, quyền và p95 danh sách hóa đơn. Evidence runtime được lưu trong [docs/evidence](docs/evidence/README.md).
+
+## Các checkpoint tiếp theo
+
+Roadmap YC1-YC7 nằm trong Design Freeze. CP2 là cổng chặn riêng; các thành phần thuộc YC3 trở đi chưa được triển khai trong baseline `base-app`.

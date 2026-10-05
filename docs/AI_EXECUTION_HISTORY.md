@@ -119,3 +119,57 @@
 - **Regression/scope:** no Billing backend/frontend/schema, Dockerfile, `docker-compose.yml`, service config, database, project container, or project network was created. Existing architecture documents were not modified.
 - **Conclusion:** CP1a PASS; ready for Commit 0a after final staged verification.
 - **Next checkpoint:** YC2 is gated by CP1a PASS; do not start it automatically.
+
+## 2026-10-05 — YC1a Commit 0a Push Verification (BLOCKED)
+
+- **Checkpoint before:** CP0 PASS.
+- **Checkpoint after:** CP1a remains BLOCKED because publishing `main` did not succeed.
+- **Commit 0a:** `d58e25d` — `chore: init repository structure, README skeleton and .gitignore`; local `main` is clean at this commit before this history append. No tag was created.
+- **Pre-push checks:** `git status` clean; `git diff` and `git diff --cached` empty; `git diff --cached --check` passed. The committed foundation contains exactly eight YC1a files: `.env.example`, `.gitignore`, `README.md`, `docs/evidence/README.md`, `docs/AI_EXECUTION_HISTORY.md`, LICENSE, and the two existing `FILEmd/` documents. No `.env`, private key, database dump, Billing source, Dockerfile, Compose file, Nginx, monitoring, or logging files were included.
+- **Push:** `git push -u origin main` failed with HTTP 403. GitHub reported `Permission to dtc245200086-svg/DTC245200086_PhamTienHa.git denied to nguyenthinga27052006-cpu`. No credentials were changed and no alternate identity was attempted.
+- **Remote/branch verification:** configured `origin` fetch/push URLs both point to `https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa.git`; local `main` remains at `d58e25d`. The push did not establish upstream tracking. Post-push `git remote -v`, `git branch -vv` and `git log --oneline --decorate -n 5` are the required verification after authorization is corrected.
+- **Files:** this section is appended to the history after Commit 0a; it is currently an unstaged working-tree change and is not included in `d58e25d` because the push was rejected. No prior history was changed or deleted.
+- **Outside Roadmap:** NONE.
+- **Scope:** no tag, source implementation, Billing Compose, Docker command, or YC2 work was created or run.
+- **Conclusion:** local Commit 0a exists; push is BLOCKED by GitHub authorization. CP1a = BLOCKED until an authorized `git push -u origin main` succeeds and remote tracking/log are verified.
+- **Next checkpoint:** finish YC1a push verification only; do not begin YC2.
+
+## 2026-10-05 — YC1a Push Retry After Collaborator Invite (BLOCKED)
+
+- The repository access screenshot showed the collaborator invitation for `nguyenthinga27052006-cpu` as **Pending Invite**.
+- Retried `git push -u origin main`; GitHub again returned HTTP 403: permission denied to `nguyenthinga27052006-cpu`.
+- Commit 0a remains local at `d58e25d`; no tag was created and no alternate credentials were used.
+- **Outside Roadmap:** NONE.
+- **Conclusion:** CP1a remains BLOCKED until the collaborator invitation is accepted and the push succeeds. Do not start YC2.
+
+## 2026-10-05 — YC1a / CP1a Final Verification PASS
+
+- **Checkpoint before:** CP0 PASS.
+- **Checkpoint after:** CP1a PASS.
+- **Commit 0a:** `d58e25d` — `chore: init repository structure, README skeleton and .gitignore`.
+- **Push result:** `git push -u origin main` succeeded; remote branch `main` was created and upstream tracking configured.
+- **Remote verification:** fetch/push URL is `https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa.git`; `git branch -vv` shows `main` tracking `origin/main`; `git log --oneline --decorate -n 5` shows `d58e25d` at both `HEAD` and `origin/main`; Git reports the branch is up to date.
+- **Files in Commit 0a:** `.env.example`, `.gitignore`, `README.md`, `docs/evidence/README.md`, `docs/AI_EXECUTION_HISTORY.md`, `LICENSE`, and the two existing Design Freeze/phase-prompt documents.
+- **Files excluded:** `.env`, private keys, database dumps, Billing source, Dockerfile, Billing Compose, Nginx, Prometheus, Grafana, Loki, Promtail, and YC2-YC5 implementation folders.
+- **Tests:** `git status`, `git diff`, `git diff --cached`, `git diff --cached --check`, ignore checks, secret/source scan, staged-boundary review, and clean-copy test passed before Commit 0a. Post-push remote, branch, and log verification passed.
+- **Files changed:** appended this final verification to `docs/AI_EXECUTION_HISTORY.md`; all prior CP0 PASS/BLOCKED and YC1a push-attempt entries remain intact.
+- **Outside Roadmap:** NONE.
+- **Tag:** none; `base-app` was not created.
+- **Conclusion:** CP1a = PASS. YC2 is unlocked as the next checkpoint, but was not started.
+
+## 2026-10-05 — YC2 / CP2 Final Verification PASS
+
+- **Checkpoint before:** CP0 PASS; CP1a PASS at Commit 0a (`d58e25d`).
+- **Checkpoint after:** YC2 and CP2 PASS. YC3 was not started.
+- **Source of truth:** Design Freeze, README, Prompt 3, current runtime and repository tests.
+- **Compose/build/runtime:** `docker compose config --quiet` passed; `docker compose up -d --build` built the web image. The project contains and runs exactly `postgres`, `web`, and `pgadmin`. Postgres and web reported healthy; pgAdmin readiness was verified through its UI and DB connection. Web is published at `127.0.0.1:8000`, pgAdmin at `127.0.0.1:5050`, and PostgreSQL has no host port mapping. `db_net` is internal and `admin_net` is non-internal.
+- **Persistence:** ran plain `docker compose down` (no `-v`) followed by `docker compose up -d --build`. Both named volumes were preserved. The customer `CP2 persistence 20261005 verification`, created through the application, was still returned by the application after restart (`CP2_PERSISTENCE_PASS`).
+- **Database:** confirmed `users`, `customers`, `invoices`, `invoice_items`, `payments`, and `user_sessions`; `invoices.due_date` is NOT NULL; invoice number has a unique constraint/index; `invoice_no_seq` starts at 1, increments by 1 and does not cycle. Required indexes and invoice constraints were present. Seed password hashes use bcrypt `$2a$12$`.
+- **Least privilege:** `postgres` is superuser; `billing_app` and `billing_readonly` are not. `billing_app` has no schema CREATE, invoice DELETE, or payment UPDATE/DELETE; it has sequence USAGE but not SELECT. `billing_readonly` can SELECT only `customers`, `invoices`, `invoice_items`, and `payments`; it cannot SELECT `users` or `user_sessions` and has no business-table DML. Eight attempted prohibited operations executed as those roles inside the PostgreSQL container were denied.
+- **Authentication/session:** verified correct and incorrect login, unauthenticated protected-route denial, session row in `user_sessions`, session survival across requests and logout invalidation. Login response did not expose password/hash. Cookie is `billing.sid`, HttpOnly, SameSite=Strict, Path=/, expires in eight hours and has no Secure flag in YC2. Runtime `SESSION_COOKIE_SECURE=false`; seed hashes verify at bcrypt cost 12. No plaintext password is stored by the application.
+- **Business/API:** `npm run test:cp2` passed all 15 check groups against the restarted runtime; the final post-cleanup invoice-list p95 was 23.18 ms. Coverage includes health/static UI, customer CRUD and role checks, draft/issue rules, invoice number format and uniqueness, NUMERIC totals, issued immutability, due-date and zero-total guards, partial/full payments, overpayment and zero-payment guards, payment concurrency, admin-only unpaid cancellation/reason, customer FK restriction, dashboard/list APIs, logout and validation/error responses. Payment transaction locking and append-only DB privileges were reviewed and verified.
+- **pgAdmin:** logged into the fresh pgAdmin UI, confirmed the imported `Billing PostgreSQL` server from `servers.json` (`postgres:5432`, database `billing`, user `billing_readonly`), entered the runtime DB password in the prompt with Save Password unchecked, connected successfully and queried customer rows as the read-only user. `servers.json` contains no Password property. Evidence: `docs/evidence/RQ2-07-pgadmin-runtime.png`.
+- **Health/logging:** `/health` returned `{"status":"ok","db":"ok"}`. Parsed 239 recent web log records as JSON; no password, cookie, session or secret fields were present.
+- **Scope/security:** no Nginx, monitoring, metrics, Loki/Promtail or SQL Server implementation was found in the YC2 implementation scan. No `.env` exists in the workspace; `.env` is ignored and `.env.example` remains trackable with placeholders only. Private-key marker scans returned no matches. Runtime credentials were read from existing container environments for local verification only and were not written to source/evidence.
+- **Files/documentation:** updated the YC2 role initializer to remove excess sequence SELECT and auth-table read privileges; expanded `scripts/cp2-smoke.mjs`; updated README, the CP2 roadmap checklist and evidence index. Earlier history entries were not changed.
+- **Commit 0b:** `feat(app): billing web app with PostgreSQL and pgAdmin via docker-compose`; target annotated tag: `base-app`. No push. Stop after Commit 0b/tag; do not start YC3.

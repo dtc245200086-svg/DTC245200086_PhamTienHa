@@ -1,12 +1,12 @@
 # PHƯƠNG HƯỚNG TRIỂN KHAI — Đề 18: Hệ thống Quản lý Hóa đơn / Billing
 
-> **Phiên bản:** DESIGN FREEZE — CP0 PASS ngày 05/10/2026 sau khi xác minh pgAdmin runtime credential
+> **Phiên bản:** DESIGN FREEZE — CP0 PASS ngày 05/10/2026; YC2/CP2 PASS ngày 05/10/2026 sau kiểm thử runtime
 > **Vai trò:** Senior Software Architect + DevOps Engineer
-> **Phạm vi tài liệu:** phân tích, thiết kế, roadmap và evidence gate. **Chưa có source code hoặc `docker-compose.yml` Billing; CP0 chỉ chạy compatibility probes tạm thời, không triển khai stack Billing.**
+> **Phạm vi tài liệu:** phân tích, thiết kế, roadmap và evidence gate. YC2 source code/Compose đã được triển khai; trạng thái checkpoint được ghi tại CP2 và trong execution history.
 > **Căn cứ:** 3 ảnh đề bài (Yêu cầu chung, Tiêu chí đánh giá, Đề 18) và phiên bản phân tích trước.
 > **Quy ước:** ⚠️ **CẦN XÁC MINH** = chưa kiểm chứng được trên máy thật. Các mục này phải được kiểm tra ở CP0 hoặc ở checkpoint ghi kèm, không được coi là đã chạy.
 >
-> **Trạng thái:** DESIGN FREEZE đã chốt. CP0 **PASS** sau khi hoàn tất kiểm tra credential runtime pgAdmin theo Prompt 1 ngày 05/10/2026. YC1a chưa bắt đầu; không có source code hoặc stack Billing. PASS chỉ xác nhận prerequisite/compatibility CP0, không phải ứng dụng Billing đã chạy.
+> **Trạng thái:** DESIGN FREEZE đã chốt. CP0, CP1a và YC2/CP2 **PASS**. CP2 xác minh ứng dụng Billing chạy cùng PostgreSQL và pgAdmin; YC3 chưa bắt đầu.
 
 ---
 
@@ -961,17 +961,17 @@ flowchart LR
 - [ ] `.gitignore` chặn `.env` và `nginx/certs/`; có `.env.example`
 
 ### CP2 — Web + DB + pgAdmin
-- [ ] web, postgres, pgadmin ở trạng thái sẵn sàng: `healthy` nếu image có healthcheck đã xác minh; nếu không, đạt kiểm tra readiness/UI tương ứng theo mục 3.12 (không giả lập healthcheck)
-- [ ] YC2 `.env` đặt `SESSION_COOKIE_SECURE=false`; đăng nhập, giữ session qua request nghiệp vụ và logout hoạt động qua HTTP `127.0.0.1:8000`
-- [ ] E2E: KH → hóa đơn → phát hành (có `invoice_no`) → thanh toán một phần → `PARTIALLY_PAID` → thanh toán đủ → `PAID`
-- [ ] Vi phạm BR bị chặn với `409` và mã lỗi đúng: sửa hóa đơn đã ISSUED, phát hành khi không có item, thanh toán vượt số nợ, staff hủy hóa đơn (`403`), xóa KH đã có hóa đơn
-- [ ] Đăng nhập bằng hash do pgcrypto tạo thành công; logout xong gọi `/api/auth/me` trả `401`
-- [ ] `docker compose down` → `up -d`: dữ liệu còn
-- [ ] pgAdmin tự đăng ký server từ `servers.json` không có password; nhập credential runtime từ `.env` và thấy bảng/bản ghi vừa tạo. Cách prompt/lưu credential phải được xác minh trên image đã pin
-- [ ] Log app là JSON hợp lệ
-- [ ] `/health` trả trạng thái DB đúng; YC2 chưa có `/metrics` và CP2 không kiểm tra Prometheus/Grafana/Loki/Promtail
-- [ ] CP2 không nghiệm thu CSP; việc này chỉ thuộc CP3
-- [ ] 5432 không có trong port mapping
+- [x] web, postgres, pgadmin ở trạng thái sẵn sàng: postgres và web healthy; pgAdmin được xác minh bằng UI/runtime connection
+- [x] YC2 `SESSION_COOKIE_SECURE=false`; login, session qua request nghiệp vụ và logout hoạt động qua HTTP `127.0.0.1:8000`
+- [x] E2E: customer → invoice → issue (`invoice_no`) → partial payment → `PARTIALLY_PAID` → full payment → `PAID`
+- [x] Vi phạm BR bị chặn: sửa invoice ISSUED, issue không item/total 0/due date sai, payment vượt nợ, staff cancel, xóa customer có invoice
+- [x] Đăng nhập bằng hash pgcrypto cost 12; logout xong `/api/auth/me` trả `401`
+- [x] `docker compose down` → `up -d --build` không xóa volume: dữ liệu còn
+- [x] pgAdmin import server không password; nhập credential runtime, không lưu password, kết nối và thấy database/bảng
+- [x] App log là JSON hợp lệ, không chứa password/cookie/session secret
+- [x] `/health` phản ánh DB; YC2 không có `/metrics` và CP2 không kiểm tra thành phần monitoring/logging
+- [x] CP2 không nghiệm thu CSP; việc này chỉ thuộc CP3
+- [x] PostgreSQL không có host port mapping 5432
 
 ### CP3 — Nginx → Commit 1
 - [ ] `https://localhost` hiển thị web; `http://localhost` → `301`
