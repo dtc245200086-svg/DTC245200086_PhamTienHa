@@ -1,0 +1,38 @@
+# Local environment files; keep the placeholder template tracked.
+.env
+.env.*
+!.env.example
+
+# Certificates and private keys.
+nginx/certs/
+*.key
+*.pem
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_ed25519
+
+# Dependencies and logs.
+node_modules/
+*.log
+
+# Database dumps; SQL source files remain trackable.
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.sql.zip
+**/dumps/
+**/backups/
+
+# Temporary/editor/OS files.
+*.tmp
+*.temp
+*.swp
+*.swo
+*.orig
+*.rej
+*~
+.DS_Store
+Thumbs.db
