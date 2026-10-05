@@ -4,6 +4,7 @@ const { writeLog } = require('../logger');
 const { inTransaction } = require('../db');
 const { parseId, parsePage, requireDate, requireDecimal, requireObject, requireText } = require('../validation');
 const { requireAuth } = require('./auth');
+const { paymentsAmountVnd } = require('../metrics');
 
 const METHODS = new Set(['CASH', 'BANK_TRANSFER', 'CARD']);
 
@@ -57,6 +58,8 @@ function paymentsRouter(pool) {
       );
       return { payment: payment.rows[0], invoice: updated.rows[0] };
     });
+
+    paymentsAmountVnd.inc(Number(result.payment.amount));
 
     writeLog('info', 'payment.recorded', {
       request_id: req.requestId,

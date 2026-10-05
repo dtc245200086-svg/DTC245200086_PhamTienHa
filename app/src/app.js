@@ -6,6 +6,7 @@ const connectPgSimple = require('connect-pg-simple');
 const { AppError } = require('./errors');
 const { writeLog } = require('./logger');
 const { apiRouter } = require('./routes');
+const { metricsRegistry, httpRequests, httpRequestDuration, getRouteTemplate } = require('./metrics');
 
 function createApp(pool, { sessionSecret, cookieSecure }) {
   if (typeof sessionSecret !== 'string' || sessionSecret.length < 32) {
@@ -23,6 +24,10 @@ function createApp(pool, { sessionSecret, cookieSecure }) {
     const startedAt = process.hrtime.bigint();
     res.on('finish', () => {
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      const route = getRouteTemplate(req.method, req.originalUrl);
+      const labels = { method: req.method, route, status_code: String(res.statusCode) };
+      httpRequests.inc(labels);
+      httpRequestDuration.observe({ method: req.method, route }, durationMs / 1000);
       const fields = {
         request_id: req.requestId,
         method: req.method,
@@ -64,6 +69,15 @@ function createApp(pool, { sessionSecret, cookieSecure }) {
       res.status(200).json({ status: 'ok', db: 'ok' });
     } catch {
       res.status(503).json({ status: 'error', db: 'unavailable' });
+    }
+  });
+
+  app.get('/metrics', async (req, res, next) => {
+    try {
+      res.set('Content-Type', metricsRegistry.contentType);
+      res.end(await metricsRegistry.metrics());
+    } catch (error) {
+      next(error);
     }
   });
 

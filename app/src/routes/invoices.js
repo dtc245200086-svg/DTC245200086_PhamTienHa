@@ -12,6 +12,7 @@ const {
   validateItems
 } = require('../validation');
 const { requireAuth, requireRole } = require('./auth');
+const { invoicesCreated } = require('../metrics');
 
 const STATUSES = new Set(['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED']);
 const TAX_RATE = /^(?:0|[1-9]\d?)(?:\.\d{1,4})?$/;
@@ -147,6 +148,7 @@ function invoiceRouter(pool) {
         return id;
       });
       const invoice = await loadInvoice(pool, invoiceId);
+      invoicesCreated.inc();
       writeLog('info', 'invoice.created', { request_id: req.requestId, user: req.user.username, invoice_id: invoiceId });
       res.status(201).json({ invoice });
     } catch (error) {

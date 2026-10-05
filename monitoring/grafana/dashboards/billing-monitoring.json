@@ -1,0 +1,25 @@
+{
+  "uid": "billing-monitoring",
+  "title": "Billing Monitoring",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    { "id": 1, "type": "row", "title": "Container", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "collapsed": false, "panels": [] },
+    { "id": 2, "type": "timeseries", "title": "Container CPU usage", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{image!=\"\",name!=\"\"}[5m]))", "legendFormat": "{{name}}" }], "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 } },
+    { "id": 3, "type": "timeseries", "title": "Container memory working set", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "container_memory_working_set_bytes{image!=\"\",name!=\"\"}", "legendFormat": "{{name}}" }], "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }, "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 } },
+    { "id": 4, "type": "row", "title": "Web", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }, "collapsed": false, "panels": [] },
+    { "id": 5, "type": "timeseries", "title": "Application requests/sec", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum by (route) (rate(http_requests_total[1m]))", "legendFormat": "{{route}}" }], "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 } },
+    { "id": 6, "type": "timeseries", "title": "HTTP status codes", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum by (status_code) (rate(http_requests_total[1m]))", "legendFormat": "{{status_code}}" }], "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 } },
+    { "id": 7, "type": "timeseries", "title": "Request latency p95", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" }], "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 } },
+    { "id": 8, "type": "timeseries", "title": "Nginx connections", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "nginx_connections_active", "legendFormat": "active" }, { "expr": "nginx_connections_reading", "legendFormat": "reading" }, { "expr": "nginx_connections_writing", "legendFormat": "writing" }, { "expr": "nginx_connections_waiting", "legendFormat": "waiting" }], "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 } },
+    { "id": 9, "type": "timeseries", "title": "Billing business metrics", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "increase(billing_invoices_created_total[1h])", "legendFormat": "invoices created" }, { "expr": "increase(billing_payments_amount_vnd_total[1h])", "legendFormat": "payment VND" }], "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 } },
+    { "id": 10, "type": "row", "title": "Database", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 }, "collapsed": false, "panels": [] },
+    { "id": 11, "type": "stat", "title": "PostgreSQL up", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "pg_up", "legendFormat": "billing" }], "gridPos": { "h": 5, "w": 6, "x": 0, "y": 27 } },
+    { "id": 12, "type": "timeseries", "title": "Active connections", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "sum(pg_stat_activity_count{datname=\"billing\"})", "legendFormat": "active" }], "gridPos": { "h": 8, "w": 9, "x": 6, "y": 27 } },
+    { "id": 13, "type": "timeseries", "title": "Transactions/sec", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "rate(pg_stat_database_xact_commit{datname=\"billing\"}[1m])", "legendFormat": "commits" }, { "expr": "rate(pg_stat_database_xact_rollback{datname=\"billing\"}[1m])", "legendFormat": "rollbacks" }], "gridPos": { "h": 8, "w": 9, "x": 15, "y": 27 } },
+    { "id": 14, "type": "timeseries", "title": "Database size", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "pg_database_size_bytes{datname=\"billing\"}", "legendFormat": "billing" }], "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }, "gridPos": { "h": 6, "w": 12, "x": 0, "y": 35 } },
+    { "id": 15, "type": "timeseries", "title": "Cache hit ratio", "datasource": { "type": "prometheus", "uid": "prometheus" }, "targets": [{ "expr": "100 * sum(rate(pg_stat_database_blks_hit{datname=\"billing\"}[5m])) / clamp_min(sum(rate(pg_stat_database_blks_hit{datname=\"billing\"}[5m])) + sum(rate(pg_stat_database_blks_read{datname=\"billing\"}[5m])), 1)", "legendFormat": "hit ratio" }], "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }, "gridPos": { "h": 6, "w": 12, "x": 12, "y": 35 } }
+  ]
+}
