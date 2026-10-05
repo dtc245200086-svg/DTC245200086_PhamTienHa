@@ -18,7 +18,7 @@
 - YC1a / CP1a: **PASS**, Commit 0a đã push lên `main`.
 - YC2 / CP2: **PASS**, baseline `base-app` có ứng dụng, PostgreSQL và pgAdmin.
 - YC3 / CP3: **PASS**; website qua Nginx HTTPS tự ký, redirect, security headers/CSP, rate limit và JSON access log đã được kiểm tra runtime.
-- YC4 / CP4: **PASS**, Commit 2/tag `commit-2-monitoring` ở local; Prometheus, Grafana và exporters có dữ liệu runtime. Commit 2 chưa push theo yêu cầu.
+- YC4 / CP4 kỹ thuật: **PASS**, Commit 2/tag `commit-2-monitoring`=`7502aa7`; support commit=`5743031` là HEAD. Working tree clean; support commit chưa push.
 - YC5 chưa bắt đầu; chưa có Loki, Promtail hay LogQL. CP6 hardening tổng thể và CP7 báo cáo/demo vẫn còn.
 
 ## Công nghệ
@@ -76,7 +76,7 @@ Hoặc trên Bash có `curl` và `jq`:
 bash scripts/load-test.sh
 ```
 
-Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag hiện ở local và chưa push. YC5 (Loki/Promtail) chưa bắt đầu.
+Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag vẫn ở `7502aa7`; HEAD là support commit `5743031` (`docs: finalize YC4 monitoring records and evidence`). Support commit chưa push. YC5 (Loki/Promtail) chưa bắt đầu.
 
 ## Kiểm thử YC3/CP3
 
