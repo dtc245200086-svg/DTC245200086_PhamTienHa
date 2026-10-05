@@ -1,12 +1,12 @@
 # PHƯƠNG HƯỚNG TRIỂN KHAI — Đề 18: Hệ thống Quản lý Hóa đơn / Billing
 
-> **Phiên bản:** DESIGN FREEZE — CP0 PASS; YC2/CP2 PASS; YC3/CP3 PASS ngày 05/10/2026 sau kiểm thử runtime
+> **Phiên bản:** DESIGN FREEZE — CP0, CP1a, YC2/CP2, YC3/CP3 và YC4/CP4 PASS ngày 05/10/2026; Commit 2 local tại `7502aa7` (`commit-2-monitoring`)
 > **Vai trò:** Senior Software Architect + DevOps Engineer
-> **Phạm vi tài liệu:** phân tích, thiết kế, roadmap và evidence gate. YC2 source code/Compose đã được triển khai; trạng thái checkpoint được ghi tại CP2 và trong execution history.
+> **Phạm vi tài liệu:** phân tích, thiết kế, roadmap và evidence gate. YC2–YC4 source/config/Compose đã được triển khai; trạng thái checkpoint được ghi tại các mục CP2–CP4 và execution history.
 > **Căn cứ:** 3 ảnh đề bài (Yêu cầu chung, Tiêu chí đánh giá, Đề 18) và phiên bản phân tích trước.
 > **Quy ước:** ⚠️ **CẦN XÁC MINH** = chưa kiểm chứng được trên máy thật. Các mục này phải được kiểm tra ở CP0 hoặc ở checkpoint ghi kèm, không được coi là đã chạy.
 >
-> **Trạng thái:** DESIGN FREEZE đã chốt. CP0, CP1a, YC2/CP2 và YC3/CP3 **PASS**. YC3 xác minh Nginx HTTPS, proxy, CSP, headers, rate limit, logs và network/port runtime. YC4 chưa bắt đầu.
+> **Trạng thái hiện tại (2026-10-05):** DESIGN FREEZE đã chốt. CP0, CP1a, YC2/CP2, YC3/CP3 và YC4/CP4 **PASS**. Commit 2/tag `commit-2-monitoring` đã tạo tại local; không push theo yêu cầu. YC5/CP5 chưa bắt đầu. CP4 pass không đồng nghĩa đã đủ toàn bộ screenshot/báo cáo YC7.
 
 ---
 
@@ -96,16 +96,16 @@
 
 ## 0.5 Phiên bản image đã ghim
 
-> Các tag dưới đây là phiên bản đã chọn; **đã pull thành công 12 upstream/base images ở CP0 ngày 05/10/2026**. Digest pull được ghi trong kết quả CP0. `node:24.21.0-alpine` là base để build service `web`; Compose sẽ tạo thêm **1 project-built image** cho `web` tại YC2. Image này chưa được build/pull. Nếu tag thay đổi về sau, cập nhật evidence và tài liệu trước khi triển khai. Không dùng `latest`.
+> Các tag dưới đây là phiên bản đã chọn; **12 upstream/base images đã pull thành công ở CP0 ngày 05/10/2026**. Digest pull được ghi trong kết quả CP0. `node:24.21.0-alpine` là base để build service `web`; project-built image của `web` đã được build và chạy từ YC2. Không dùng `latest`.
 
 | Service | Image:tag | Ghi chú |
 |---|---|---|
 | web — Node base image | `node:24.21.0-alpine` | Node 24 LTS; upstream/base image dùng để build image riêng của service `web` |
-| postgres | `postgres:16.15-trixie` | Ghim cả bản Debian để tag không bị trôi |
-| pgadmin | `dpage/pgadmin4:9.18.0` | Pull PASS; `PGADMIN_SERVER_JSON_FILE` auto-import probe PASS; UI/DB integration chờ CP2 |
+| postgres | `postgres:16.15-trixie` | Ghim cả bản Debian để tag không bị trôi; YC2/CP2 và YC4/CP4 runtime PASS |
+| pgadmin | `dpage/pgadmin4:9.18.0` | Pull PASS; auto-import, runtime credential và UI/DB integration PASS tại CP2; runtime service vẫn chạy ở CP4 |
 | nginx | `nginxinc/nginx-unprivileged:1.30.5-alpine` | Nhánh stable 1.30 |
-| prometheus | `prom/prometheus:v3.15.0` | Pull PASS; `/bin/wget` observed; target/readiness chờ CP4 |
-| grafana | `grafana/grafana:13.2.3` | Pull PASS; provisioning datasource probe PASS; dashboard Billing chờ CP4 |
+| prometheus | `prom/prometheus:v3.15.0` | Pull PASS; `/bin/wget` observed; readiness và cả 6 scrape targets UP tại CP4 |
+| grafana | `grafana/grafana:13.2.3` | Pull PASS; health, datasource/dashboard provisioning và 15-panel Billing Monitoring dashboard PASS tại CP4; `admin/admin` bị từ chối |
 | loki | `grafana/loki:3.7.8` | Pull PASS; Promtail push/query probe PASS; `/ready` 503 trong probe config mặc định ngắn, project readiness chờ CP5 |
 | promtail | `grafana/promtail:3.6.11` | **EOL**; pull PASS; push/query tới Loki 3.7.8 probe PASS; tiếp tục cần kiểm tra config project ở CP5 |
 | cadvisor | `ghcr.io/google/cadvisor:v0.60.6` | Pull PASS; healthcheck healthy, `/metrics` sample-label probe PASS trên Docker Desktop Linux VM |
@@ -113,7 +113,7 @@
 | postgres-exporter | `prometheuscommunity/postgres-exporter:v0.20.1` | |
 | nginx-exporter | `nginx/nginx-prometheus-exporter:1.5.3` | Tag không có tiền tố `v` |
 
-> Bảng có **12 upstream/base images**. Image `web` do project build từ Node base image chưa tồn tại vì YC2 chưa bắt đầu, và không thuộc số upstream images đã pull.
+> Bảng có **12 upstream/base images**. Image `web` được Compose build riêng từ Node base image tại YC2; đây là project-built image, không phải upstream image thứ 13.
 
 - **Ghim theo digest:** không bắt buộc. CP0 đã ghi lại digest của 12 upstream/base images trong bảng evidence tại Phần 5 để chứng minh tag đã pull; không đưa digest vào compose để tránh rối.
 
@@ -653,24 +653,24 @@ flowchart LR
 |---|---|
 | Image | `ghcr.io/google/cadvisor:v0.60.6` (registry hiện hành; `gcr.io/cadvisor/cadvisor` chỉ cho bản < v0.53.0) |
 | Mount (theo README chính thức) | `/:/rootfs:ro`, `/var/run:/var/run:ro`, `/sys:/sys:ro`, `/var/lib/docker/:/var/lib/docker:ro`, `/dev/disk/:/dev/disk:ro` |
-| Quyền | `privileged: true`, `devices: /dev/kmsg` |
+| Quyền | `privileged: true`; CP4 chạy được mà không cần khai báo `devices: /dev/kmsg` |
 | Giảm thiểu | Không publish cổng; chỉ nằm trên `monitoring_net`; mọi mount đều `:ro`; ghim phiên bản; có thể thêm `--docker_only=true` để giảm dữ liệu thu |
 | Hardening | **Ngoại lệ được chấp nhận** (mục 3.16) |
-| Kiểm tra hoạt động | (1) Target `cadvisor` UP; (2) query `container_memory_working_set_bytes{name=~"billing-.+"}` trả về chuỗi cho các container của project |
-| Giới hạn | CP0 probe trên Windows + Docker Desktop đã trả metric/label cho sample container; dữ liệu cAdvisor thuộc cgroup của **VM Linux Docker Desktop**, không phải Windows host. Project container labels/metrics vẫn xác minh CP4. **Không trình bày số liệu này như số liệu của máy Windows** |
+| Kiểm tra hoạt động | CP4: target `cadvisor` UP; CPU/RAM PromQL theo `container_label_com_docker_compose_project="billing"` trả 10 series cho đúng 10 service Billing. Không lọc chỉ theo tên `billing-*`, vì host còn có Compose project khác dùng cùng prefix |
+| Giới hạn | CP0 và CP4 xác nhận dữ liệu thuộc **Linux VM của Docker Desktop**, không phải Windows host. Label Compose project có trên metric thực tế; dashboard lọc đúng project Billing. **Không trình bày số liệu này như số liệu của máy Windows** |
 | Phương án dự phòng | (a) Chỉnh mount/flag theo `docs/running.md` của cAdvisor; (b) chạy demo trên Docker Engine trong WSL2 Ubuntu hoặc máy ảo Linux. Không thay bằng ảnh `docker stats` vì rubric cần Prometheus/Grafana |
 
-**node-exporter:** chỉ mount `/proc` và `/sys` (ro), cấu hình `--path.procfs` và `--path.sysfs`. **Không** dùng mount `/:/host:ro,rslave`, vì Docker Desktop không hỗ trợ mount propagation kiểu này. Số liệu là của **VM Docker Desktop**. Đây là panel phụ, không chặn CP4.
+**node-exporter:** cấu hình chạy thực tế dùng `--path.rootfs=/host` và mount `/:/host:ro`; không dùng propagation `rslave` vì Docker Desktop từ chối mount đó. Target `node` UP và `node_cpu_seconds_total` có 96 series tại CP4. Số liệu host là của **VM Docker Desktop**, không phải Windows; node-exporter là panel phụ.
 
-**Dashboard "Billing Overview"** (provision bằng file JSON). Tên metric ⚠️ CẦN XÁC MINH tại CP4 bằng output `/metrics` thật của exporter.
+**Dashboard "Billing Monitoring"** (15 panels, provision bằng file JSON; Grafana 13.2.3 đã nạp thành công). Mọi metric/label trong query được kiểm tra bằng Prometheus runtime ở CP4. Hai panel Container lọc theo label Compose project `billing`.
 
 | Row | Panel | Nguồn / PromQL tham khảo |
 |---|---|---|
-| **1. Container** | CPU theo container | `sum by (name) (rate(container_cpu_usage_seconds_total{name=~"billing-.+"}[1m]))` |
-| | RAM theo container | `container_memory_working_set_bytes{name=~"billing-.+"}` |
-| | Network RX/TX | `rate(container_network_receive_bytes_total{name=~"billing-.+"}[1m])` / `…transmit…` |
-| | Uptime (phát hiện restart) | `time() - container_start_time_seconds{name=~"billing-.+"}` |
-| | Số container đang chạy | `count(container_last_seen{name=~"billing-.+"})` |
+| **1. Container** | CPU theo container Billing | `sum by (name) (rate(container_cpu_usage_seconds_total{image!="",container_label_com_docker_compose_project="billing"}[5m]))` |
+| | RAM theo container Billing | `container_memory_working_set_bytes{image!="",container_label_com_docker_compose_project="billing"}` |
+| | Network RX/TX (metric quan sát được; panel bổ sung nếu cần) | `rate(container_network_receive_bytes_total{name=~"billing-.+"}[1m])` / `rate(container_network_transmit_bytes_total{name=~"billing-.+"}[1m])` |
+| | Uptime (phát hiện restart; metric quan sát được) | `time() - container_start_time_seconds{name=~"billing-.+"}` |
+| | Số container đang chạy (metric quan sát được) | `count(container_last_seen{name=~"billing-.+"})` |
 | **2. Web** | Nginx active connections | `nginx_connections_active` |
 | | Nginx req/s | `rate(nginx_http_requests_total[1m])` |
 | | App req/s theo status | `sum by (status_code) (rate(http_requests_total[1m]))` |
@@ -696,9 +696,11 @@ Label `route` là **mẫu route** (`/api/invoices/:id`), **không** dùng path t
 **Grafana:**
 - Mật khẩu admin lấy từ `.env`.
 - Tắt đăng ký tài khoản (sign-up), tắt truy cập ẩn danh, tắt gửi dữ liệu thống kê (analytics/reporting).
-- Datasource và dashboard provision từ `monitoring/grafana/provisioning/`. ⚠️ CẦN XÁC MINH ở CP4: Grafana 13 vẫn nạp dashboard JSON dạng cũ qua file provider.
+- Datasource và dashboard provision từ `monitoring/grafana/provisioning/`; Grafana 13.2.3 nạp thành công. API health `ok`, datasource `OK`, dashboard 15 panels; login `admin/admin` trả 401. Cấu hình/dashboard vẫn tồn tại sau `docker compose down` → `up` (không dùng `-v`).
 
 **Tạo traffic:** `scripts/load-test.ps1` và `.sh`, dùng `curl -k`, không thêm container. Script đăng nhập, tạo khách hàng, tạo/phát hành hóa đơn, thanh toán, cố ý gọi 404 và đăng nhập sai, lặp N lần.
+
+**Kết quả CP4 (2026-10-05):** 6/6 targets (`prometheus`, `cadvisor`, `node`, `nginx`, `web`, `postgres`) UP. cAdvisor trả CPU/RAM cho 10 service Billing; nginx-exporter có `nginx_up=1` và `nginx_connections_active`; app metrics có route templates, histogram, process/Node/event-loop và business counters; postgres-exporter có `pg_up=1`, connections, transactions, database size và cache hit ratio. Ba lượt traffic thật tạo invoice/payment counters; public `/metrics` và `/stub_status` đều 404. Chạy full CP2 smoke qua HTTPS pass 15 nhóm; restart/down-up giữ dữ liệu nghiệp vụ và Grafana provisioning. Chi tiết ở `docs/AI_EXECUTION_HISTORY.md`.
 
 ## 3.15 Logging (Loki + Promtail)
 
@@ -957,8 +959,8 @@ flowchart LR
 > CP0 PASS chỉ cho phép chuyển sang YC1a/YC2. Nó không chứng minh ứng dụng, dashboard Billing, healthcheck của mọi service, hay toàn bộ hệ thống đã hoạt động.
 
 ### CP1a — Repo
-- [ ] Tài khoản và repo theo MSSV; đã push `main`
-- [ ] `.gitignore` chặn `.env` và `nginx/certs/`; có `.env.example`
+- [x] Repo theo MSSV đã được push ở CP1a; lịch sử execution xác nhận GitHub authorization và remote verification PASS. Commit 2 hiện tại chưa push theo yêu cầu của Prompt 5; `origin/main` vẫn ở Commit 1.
+- [x] `.gitignore` chặn `.env` và `nginx/certs/`; có `.env.example` chỉ chứa placeholder.
 
 ### CP2 — Web + DB + pgAdmin
 - [x] web, postgres, pgadmin ở trạng thái sẵn sàng: postgres và web healthy; pgAdmin được xác minh bằng UI/runtime connection
@@ -989,18 +991,24 @@ flowchart LR
 - [x] Public `/health` và `/metrics` trả 404; app `/metrics` và Nginx `stub_status` không được triển khai
 - [x] CP2 E2E suite PASS qua HTTPS sau Nginx; business/auth logic và DB roles không đổi
 - [x] `nginx/`, cert scripts, Compose, smoke test và evidence được kiểm tra scope; private key không được track
-- [ ] Tạo Commit 1 và annotated tag `commit-1-nginx` sau staged diff/security verification
+- [x] Commit 1 và annotated tag `commit-1-nginx` đã tồn tại tại `d179090`; không di chuyển tag/lịch sử.
 
 ### CP4 — Monitoring → Commit 2
-- [ ] Targets **UP**: `prometheus`, `cadvisor`, `nginx`, `web`, `postgres` (bắt buộc); `node` (phụ)
-- [ ] Dashboard có số liệu thực ở **cả 3 row** Container / Web / DB sau khi chạy load-test; không chấp nhận dashboard No Data
-- [ ] Xác minh tên và label metric bằng response `/metrics` thực tế của app/exporter trước khi cố định PromQL/dashboard JSON
-- [ ] cAdvisor query trả metric container phù hợp môi trường; nếu Docker Desktop không đáp ứng, chuyển preflight/demo sang WSL2/Linux và xác minh lại. `node-exporter` vẫn là panel phụ, không chặn CP4
-- [ ] Dashboard và datasource provision bằng file; vẫn còn sau `down`/`up`
-- [ ] Grafana không đăng nhập được bằng `admin/admin`
-- [ ] Đã ghi giới hạn cAdvisor/node-exporter trên Docker Desktop (nếu có)
-- [ ] Diff chỉ chứa nội dung monitoring
-- [ ] **Đã tạo Commit 2 + tag `commit-2-monitoring`**
+- [x] Tất cả 6 target (`prometheus`, `cadvisor`, `node`, `nginx`, `web`, `postgres`) UP; đã xem Prometheus Targets runtime.
+- [x] 15-panel Grafana dashboard có dữ liệu thật ở Container / Web / Database; mọi query của panel được gọi qua Prometheus API và trả series.
+- [x] App `/metrics` trả exposition hợp lệ: process/Node/event-loop, request counter, latency histogram, invoice/payment counters; route labels là template như `/api/invoices/:id`, không có ID thật.
+- [x] cAdvisor CPU/RAM trả 10 series cho Compose project `billing`; query dashboard lọc bằng label `container_label_com_docker_compose_project="billing"`, tránh trộn các Compose project khác trên host.
+- [x] nginx-exporter truy cập `stub_status` qua `app_net`; `nginx_up=1`, `nginx_connections_active` có dữ liệu. Nginx không publish cổng status.
+- [x] postgres-exporter kết nối bằng role `exporter` (không phải superuser; là member `pg_monitor`); `pg_up`, connections, transactions, database size và cache hit ratio đều có series.
+- [x] Grafana datasource API trả `OK`; dashboard được nạp từ provisioning, health `ok`, có 15 panels và tồn tại sau down/up; đăng nhập `admin/admin` trả HTTP 401.
+- [x] Load-test PowerShell chạy 3 bộ traffic thật qua HTTPS; customer/invoice/payment được ghi vào DB, invoice/payment counters dương; public `/metrics` và `/stub_status` đều 404.
+- [x] CP2 regression suite qua HTTPS pass 15 nhóm; down/up không xóa dữ liệu nghiệp vụ và dashboard/provisioning.
+- [x] Runtime network membership đúng; `monitoring_net` internal; Nginx/PostgreSQL không thuộc network; web/exporters không publish host port; Grafana/Prometheus/pgAdmin bind loopback.
+- [x] Image tags đúng phiên bản đã chốt; không có `latest`, Loki, Promtail hay YC5 logging pipeline trong Commit 2.
+- [x] Node-exporter target và host metrics hoạt động; số liệu thuộc Linux VM của Docker Desktop, không phải Windows host.
+- [x] `git diff --check`, secret/YC5 boundary và exact staged file list PASS trước commit; không có `.env` hoặc private key trong Git.
+- [x] Commit 2 `7502aa7` và annotated tag `commit-2-monitoring` đã tạo; `base-app=aa0d392`, `commit-1-nginx=d179090` giữ nguyên; worktree sạch sau commit. Không push.
+- [ ] Ảnh Grafana riêng cho Container, Web và DB theo RQ4-02/03/04 chưa chụp; CP4 kỹ thuật đã pass, nhưng cần bổ sung trước khi hoàn thiện evidence/report YC7.
 
 ### CP5 — Logging → Commit 3
 - [ ] Loki `/ready` OK; Promtail đang đọc log các service `billing`
@@ -1117,15 +1125,16 @@ flowchart LR
 | YC | Implementation | Test (đạt khi) | Evidence (B) | Rubric | ✔ |
 |---|---|---|---|---|---|
 | 1 | Repo MSSV; source + compose + config; README 16 mục; 3 commit mốc có tag | Clone sạch chạy theo README; `git log` đúng thứ tự; không có secret | RQ1-01…04 | Quản lý mã nguồn — 1.5 | ☐ |
-| 2 | web + postgres + pgadmin; init DB; auth; BR; health/readiness đã xác minh; volume | CP2 | RQ2-01…06 | Ứng dụng + DB — 1.5 | ☐ |
-| 3 | Nginx proxy, TLS tự ký, 6 headers, web không publish | CP3; Commit 1 | RQ3-01…03, 05 | Nginx Reverse Proxy — 1.5 | ☐ |
-| 4 | Prometheus + cAdvisor/node/nginx/postgres exporter + app `/metrics` và Nginx `stub_status`; Grafana provisioned 3 row | CP4; Commit 2 | RQ4-01…04 | Prometheus + Grafana — 1.5 | ☐ |
+| 2 | web + postgres + pgadmin; init DB; auth; BR; health/readiness đã xác minh; volume | CP2 PASS | RQ2-01…06 | Ứng dụng + DB — 1.5 | ☒ |
+| 3 | Nginx proxy, TLS tự ký, 6 headers, web không publish | CP3 PASS; Commit 1 | RQ3-01…03, 05 | Nginx Reverse Proxy — 1.5 | ☒ |
+| 4 | Prometheus + cAdvisor/node/nginx/postgres exporter + app `/metrics` và Nginx `stub_status`; Grafana provisioned 3 row | CP4 kỹ thuật PASS; ảnh 3 row còn thiếu | RQ4-01 đã có; RQ4-02/03/04 cần chụp | Prometheus + Grafana — 1.5 | ☐ |
 | 5 | Loki + Promtail, label gọn, log JSON, Q1–Q6 | CP5; Commit 3 | RQ5-01…05 | Loki — 1.5 | ☐ |
 | 6 | H1–H6 bắt buộc + tuỳ chọn đã test; ngoại lệ ghi rõ | CP6 | RQ6-01…05 + RQ3-03 | Hardening (≥ 3–4) — 1.5 | ☐ |
 | 7 | Báo cáo ≥ 10 trang, bìa chuẩn; compose chạy trọn vẹn; demo; Q&A | CP7 | RQ7-01, 02 + toàn bộ ảnh B | Tổng thể & Trình bày — 1.0 | ☐ |
 | | | | | **10.0** | |
 
 **Đối chiếu chéo trước khi nộp:**
+- CP4 kỹ thuật đã PASS, nhưng chưa tick YC4 ở checklist rubric cuối cho tới khi chụp đủ ảnh Grafana Container/Web/DB theo RQ4-02/03/04.
 - [ ] Hardening không làm hỏng tiêu chí 2–5.
 - [ ] Mỗi cụm từ trong rubric đều có ảnh: *"pgAdmin hoạt động"*, *"truy cập website qua Nginx"*, *"HTTPS hoặc security headers"*, *"dashboard container / web / DB"*, *"LogQL ≥ 2–3 query"*, *"≥ 3–4 biện pháp"*, *"đủ 03 commit"*, *"README hướng dẫn chạy"*.
 - [ ] Toàn hệ thống chạy bằng **một** `docker compose up -d`.
@@ -1136,7 +1145,7 @@ flowchart LR
 
 | ID | Rủi ro / giới hạn | Mức | Phòng ngừa / cách trình bày |
 |---|---|---|---|
-| R1 | Windows + Docker Desktop: cAdvisor/node-exporter report VM Linux metrics, not Windows host metrics; project labels may differ | Cao | CP0 sample cAdvisor metric/label probe PASS on Docker Desktop VM; validate Billing container panels at CP4 and retain WSL2/Linux fallback |
+| R1 | Windows + Docker Desktop: cAdvisor/node-exporter report VM Linux metrics, not Windows host metrics | Trung bình | CP4 xác nhận metric/label project; CPU/RAM dashboard lọc `container_label_com_docker_compose_project="billing"`; không trình bày dữ liệu như Windows host. WSL2/Linux là fallback nếu môi trường khác |
 | R2 | **Promtail EOL từ 02/03/2026**: không còn bản vá bảo mật; tag 3.6.11 lệch nhánh với Loki 3.7.8 | Trung bình | Giữ Promtail vì đề yêu cầu; cả 2 tag pull CP0 và sample push/query PASS; log config/project labels và Loki readiness vẫn xác minh CP5; báo cáo rõ EOL |
 | R3 | Promtail mount `docker.sock` = quyền điều khiển Docker | Trung bình | Ngoại lệ được chấp nhận; không publish; network internal; phương án đọc file log (cần xác minh) |
 | R4 | Số hóa đơn có thể có khoảng trống, không reset theo năm | Thấp | Đã ghi trong BR-01; có phương án bảng counter nếu GV yêu cầu |
@@ -1144,8 +1153,8 @@ flowchart LR
 | R6 | Đổi mật khẩu `.env` sau khi đã khởi tạo volume thì không có tác dụng | Trung bình | Ghi trong troubleshooting của README (`down -v` hoặc `ALTER ROLE`) |
 | R7 | Các Compose projects ngoài workspace đang publish 5432, 5433 và 6380 | Thấp | CP0 ghi nhận; không dừng/sửa các workload đó. Billing PostgreSQL không publish host port; chứng minh bằng port mappings của project tại YC2/CP6 |
 | R8 | Cảnh báo cert tự ký khi demo; HSTS không có hiệu lực với cert tự ký | Thấp | README có hướng dẫn; giải thích trong báo cáo |
-| R9 | Dashboard trống lúc demo | Trung bình | Chạy load-test 2 phút trước demo |
-| R10 | Các tag upstream đã pull CP0 nhưng runtime ứng dụng chưa triển khai; project-built web image chưa được tạo | Trung bình | 12 pulls/digests được ghi ở Phần 5; build riêng project web ở YC2 sau khi bắt đầu triển khai |
+| R9 | Dashboard ít traffic nếu mở sau thời gian rảnh | Thấp | CP4 đã xác nhận 3 nhóm có dữ liệu; chạy load-test trước demo để tạo số liệu mới |
+| R10 | Một số ảnh evidence/report và YC5–YC7 chưa hoàn tất | Trung bình | Runtime YC2–YC4 đã triển khai; giữ nguyên 12 image pins; chụp RQ4-02/03/04 và tiếp tục các checkpoint còn lại |
 | R11 | Rate limit theo IP bị "gộp" sau NAT của Docker Desktop | Thấp | Chấp nhận khi demo; ghi trong phần giới hạn |
 | R12 | Không hiểu bài khi bị hỏi | Trung bình | Bộ câu hỏi ở Phần 4; mỗi cấu hình có lý do trong tài liệu |
 
@@ -1157,58 +1166,59 @@ flowchart LR
 
 | Mục | Trạng thái | Ghi chú |
 |---|---|---|
-| Bám Đề 18 | Đủ ở mức thiết kế | Hóa đơn, khách hàng, thanh toán; PostgreSQL + pgAdmin; stack theo đề. Chưa triển khai |
-| Bám 7 YC | Đủ ở mức thiết kế | YC1–YC7 được ánh xạ sang roadmap, checkpoint và evidence; chưa nghiệm thu |
-| Rubric 10 điểm | Được bao phủ ở mức thiết kế | Mỗi tiêu chí có implementation/test/evidence dự kiến; không phải kết quả đạt điểm |
-| FR/NFR nhất quán | Được rà soát trên tài liệu | CSP nghiệm thu ở YC3; log từ YC2; metrics chỉ từ YC4 |
-| BR nhất quán | Được rà soát trên tài liệu | Sequence sinh số duy nhất, tăng dần, có khoảng trống; tiền `NUMERIC`, transaction, khóa thanh toán; chưa chạy test |
+| Bám Đề 18 | YC1–YC4 đã triển khai | Website, PostgreSQL, pgAdmin, Nginx và monitoring runtime hoạt động; YC5–YC7 còn lại |
+| Bám 7 YC | YC1a/YC2/YC3/YC4 đã qua checkpoint tương ứng | YC1 final, YC5, YC6, YC7 chưa hoàn tất |
+| Rubric 10 điểm | Chưa nghiệm thu toàn bộ | YC4 runtime đạt nhưng còn screenshot report; YC5 logging, YC6 hardening và YC7 report/demo còn thiếu |
+| FR/NFR nhất quán | YC2–YC4 đã có runtime regression | CSP và Nginx ở CP3; log JSON ở CP2; metrics ở CP4; logging tập trung thuộc CP5 |
+| BR nhất quán | CP2 regression PASS | Sequence, NUMERIC, transaction và payment locking đã được kiểm tra trong CP2 |
 | Auth nhất quán | Được chốt ở mức thiết kế | express-session, PostgreSQL store, bcrypt, không JWT; cookie chuyển theo `SESSION_COOKIE_SECURE` |
 | Session YC2/YC3 | CP2/CP3 runtime PASS | YC2 HTTP/false; YC3 HTTPS/true; cookie Secure/HttpOnly/SameSite/Path/8h được kiểm tra |
 | Network / H2 | YC3 runtime membership/flags PASS | `edge_net`, `app_net`, `db_net`, `admin_net` và host mappings được inspect; không kết luận Internet egress |
 | Invoice numbering | Được chốt ở mức thiết kế | `INV-YYYY-NNNNNN`, sequence PostgreSQL, không reset theo năm, có thể có khoảng trống |
-| Docker images | CP0 pull PASS | 12 upstream/base tags đã pull, digest ghi ở Phần 5; service runtime chưa triển khai. Project-built web image chưa tạo |
-| Image count | Nhất quán trong thiết kế | **12 upstream/base images**; `node:24.21.0-alpine` là base để build `web`; Compose tạo thêm **1 project-built image** cho `web` ở YC2, không phải upstream image và không pull ở CP0 |
+| Docker images | CP0 pulls + YC2–YC4 runtime PASS | Các image pins YC4 đúng thiết kế; project-built `web` image đã tạo ở YC2 |
+| Image count | Runtime đang dùng đúng danh mục | **12 upstream/base images**; `node:24.21.0-alpine` là base để build `web`, tạo thêm 1 project-built image |
 | `/metrics` theo commit | Được chốt ở mức thiết kế | Chỉ YC4/Commit 2; không có ở YC2 hoặc Commit 1 |
 | `stub_status` theo commit | Được chốt ở mức thiết kế | Chỉ YC4/Commit 2; Commit 1 độc lập monitoring |
 | Nginx | CP3 runtime PASS | Proxy/TLS/headers/CSP/rate-limit/JSON log/health verified; không app `/metrics`, không `stub_status` |
-| Monitoring 3 nhóm | Chờ CP0/CP4 | Container/Web/DB đã ánh xạ; target, metric names và dữ liệu dashboard chưa xác minh |
+| Monitoring 3 nhóm | CP4 PASS | 6/6 targets UP; dashboard 15 panels; CPU/RAM cAdvisor project-filtered; app/Nginx/DB metrics và business series có dữ liệu; Grafana provisioning tồn tại sau down/up |
 | Logging | Compatibility CP0 PASS; project CP5 chưa chạy | Promtail EOL được ghi nhận; sample push/query qua Loki đạt; project labels/config và ≥3 LogQL thật vẫn thuộc CP5 |
-| Hardening | Đủ tiêu chí ở mức thiết kế | H1–H6 là mục tiêu bắt buộc; chỉ đánh dấu đạt sau test và evidence CP6 |
-| Healthcheck | CP0 inventory PASS; service health chờ YC2–YC5 | Tool/declared healthcheck được ghi ở mục 3.12; endpoint chưa trả response không được biến thành custom healthcheck |
+| Hardening | Một phần được kiểm tra tại CP2–CP4 | H1–H6 chưa nghiệm thu tổng thể; verify-hardening, least-privilege negative tests/evidence và regression CP6 còn lại |
+| Healthcheck | CP2–CP4 runtime PASS cho healthchecks đã khai báo | Postgres, web, Nginx, cAdvisor healthy; các exporter targets UP; không gán trạng thái healthy cho service không có healthcheck |
 | pgAdmin credential | CP0 PASS ngày 2026-10-05 | pgAdmin UI/import/runtime password/DB connection/table đều đạt với probe tạm; không có password trong JSON |
-| Evidence | CP3 runtime evidence captured | `RQ3-01-https-browser.png` và `RQ3-02-runtime-verification.png`; secret-free |
-| README | Đã cập nhật sau CP3 | HTTPS/redirect, certificate, secure cookie, Nginx-only ingress và local test instructions |
-| Git commit plan | Commit 1 candidate qua CP3 | Chỉ tạo `commit-1-nginx` sau staged scope check; YC4 chưa bắt đầu |
-| Môi trường | CP0–CP3 runtime gates PASS | Docker Desktop/Compose; YC1a, YC2, YC3 đã triển khai; YC4 chưa bắt đầu |
+| Evidence | CP2–CP4 có runtime evidence một phần | CP2/CP3 images và RQ4-01/RQ4-03-metrics tồn tại; thiếu screenshot dashboard rows RQ4-02/03/04 |
+| README | Cập nhật qua YC4 | Hướng dẫn chạy/URLs, secure cookie, monitoring, load-test và phần còn chờ YC5–YC7 |
+| Git commit plan | Commit 1 và Commit 2 đã tạo | `commit-1-nginx=d179090`; `commit-2-monitoring=7502aa7`; Commit 2 ở local, không push; không di chuyển tag |
+| Môi trường | CP0–CP4 runtime gates PASS | Docker Desktop/Compose; YC1a, YC2, YC3, YC4 đã triển khai; YC5 chưa bắt đầu |
 
 ## Self-audit — 10 câu hỏi
 
 | # | Câu hỏi | Kết quả rà soát tài liệu |
 |---|---|---|
-| 1 | Có còn lỗi kiến trúc đã biết không? | Không thấy lỗi kiến trúc đã biết trong phạm vi tài liệu; mọi compatibility/runtime giả định đều chờ checkpoint |
-| 2 | YC1–YC7 có được bao phủ không? | Có roadmap, checkpoint, evidence và final checklist cho cả 7 YC |
-| 3 | 3 commit mốc có đúng thứ tự không? | Có: Commit 1 Nginx → Commit 2 Monitoring → Commit 3 Logging; commit 0a/0b/4/5/6 là hỗ trợ |
+| 1 | Có còn lỗi kiến trúc đã biết không? | CP4 phát hiện và sửa filter cAdvisor để loại các Compose project ngoài `billing`; các YC còn lại phải kiểm tra ở checkpoint tương ứng |
+| 2 | YC1–YC7 có được bao phủ không? | Có roadmap/evidence plan; chỉ CP0–CP4 và YC1a hiện PASS, YC1 final/YC5–YC7 còn pending |
+| 3 | 3 commit mốc có đúng thứ tự không? | Commit 1 Nginx → Commit 2 Monitoring đã tồn tại; Commit 3 Logging/YC5 chưa bắt đầu |
 | 4 | YC2 có hoạt động mà chưa cần Nginx không? | Thiết kế có web tạm bind `127.0.0.1:8000`, cookie `SESSION_COOKIE_SECURE=false`; phải xác minh tại CP2 |
-| 5 | Commit 1 có thực sự chỉ là Nginx không? | Có boundary rõ: không Prometheus/Grafana/exporter/app `/metrics`/`stub_status`; kiểm tra diff tại CP3 |
-| 6 | Commit 2 có Container/Web/DB không? | Thiết kế ánh xạ cAdvisor, nginx/app metrics và postgres-exporter; target/metric/dashboard phải xác minh tại CP4 |
+| 5 | Commit 1 có thực sự chỉ là Nginx không? | Có; `commit-1-nginx` giữ nguyên ở `d179090`, Commit 2 không rollback Nginx |
+| 6 | Commit 2 có Container/Web/DB không? | CP4 PASS: targets, PromQL, Grafana datasource/dashboard và dữ liệu thực đã xác minh; follow-up project-label filter được ghi riêng sau tag |
 | 7 | Commit 3 có LogQL ≥3 query thực tế không? | CP0 xác minh sample push/query Promtail→Loki; LogQL của project và ≥3 kết quả vẫn chờ CP5 |
-| 8 | Hardening có ít nhất 6 biện pháp kiểm chứng được không? | H1–H6 được định nghĩa với test/evidence dự kiến; chỉ tính đạt sau CP6 |
-| 9 | Có coi thiết kế là runtime đã chạy không? | Không; chỉ CP0 probes đã chạy. Ứng dụng Billing chưa có source/Compose và chưa triển khai |
-| 10 | Có mâu thuẫn roadmap/checkpoint/evidence/final checklist không? | Đã hoàn tất credential runtime pgAdmin còn thiếu; CP0 hiện PASS, YC1a/YC2 chưa bắt đầu |
+| 8 | Hardening có ít nhất 6 biện pháp kiểm chứng được không? | Một số controls đã được kiểm tra ở CP2–CP4; chỉ kết luận CP6 sau verify-hardening và đủ evidence H1–H6 |
+| 9 | Có coi thiết kế là runtime đã chạy không? | Không; CP2/CP3/CP4 có runtime evidence riêng. Không suy rộng kết quả đó thành CP5–CP7 |
+| 10 | Có mâu thuẫn roadmap/checkpoint/evidence/final checklist không? | Đã đồng bộ YC4; CP4 PASS. Còn thiếu dashboard screenshots RQ4-02/03/04 và các YC1 final/YC5–YC7 |
 
 ## Kết luận
 
-**DESIGN FREEZE — CP0 PASS.** Mọi prerequisite bắt buộc theo Prompt 1 đã có evidence, bao gồm UI/import/credential runtime/kết nối DB của pgAdmin. Đây **không** phải xác nhận ứng dụng Billing đã chạy.
+**Trạng thái hiện tại — 2026-10-05:** CP0, CP1a, CP2, CP3 và CP4 PASS. Commit 2 `7502aa7` / tag `commit-2-monitoring` đã tạo local; `base-app` và `commit-1-nginx` không đổi. Không push.
 
-**DỪNG TẠI CP0.** YC1a là checkpoint kế tiếp nhưng chưa bắt đầu; không tự động chuyển tiếp.
+**Đã làm:** YC1a repository foundation; YC2 ứng dụng/DB/pgAdmin; YC3 Nginx HTTPS/security; YC4 monitoring Prometheus/Grafana ba nhóm, load-test, runtime regression và persistence. Runtime Billing đang chạy.
 
-**Còn chờ checkpoint triển khai:**
-- YC1a/CP1a: thông tin repo theo MSSV, `.gitignore`, README skeleton.
-- YC2/CP2: project-built web image, app/DB/pgAdmin tích hợp, cookie false, health/readiness, nghiệp vụ và DB connection.
-- YC3/CP3: Nginx/TLS/CSP, cookie Secure, reverse proxy.
-- YC4/CP4: project metrics, exporter targets, dashboard Billing và metric labels.
-- YC5/CP5: project logging config, Loki readiness và ≥3 LogQL project queries.
-- YC6–YC7: hardening runtime, evidence, docs/report/demo.
+**Còn thiếu:**
+- YC1 final: hoàn thiện README theo đủ mục, evidence/index báo cáo; commit2 chưa push theo yêu cầu hiện tại.
+- YC4 report evidence: chưa có ảnh Grafana riêng cho Container/Web/DB (RQ4-02/03/04). Ảnh `RQ4-07-prometheus-business-metric.png` là Prometheus business-metric query; không thay thế ảnh Web row RQ4-03 trong evidence plan này.
+- YC5/CP5: chưa bắt đầu; chưa có Loki, Promtail, Loki datasource hay LogQL. Đây là bước kế tiếp nhưng không thuộc CP4.
+- YC6/CP6: chưa nghiệm thu trọn bộ H1–H6, `verify-hardening`, negative tests và evidence.
+- YC7/CP7: chưa có báo cáo ≥10 trang, bìa, đủ screenshots, diễn tập demo và Q&A.
+
+**Dừng tại Commit 2 theo phạm vi Prompt 5.** Không push, không bắt đầu YC5, không thêm Loki/Promtail. Dashboard project-label follow-up sau tag được ghi ở execution history và chưa commit; không di chuyển tag hay sửa lịch sử.
 
 ---
 
@@ -1224,8 +1234,11 @@ flowchart LR
 - Sau CP0 PASS, trạng thái chuyển sang DESIGN FREEZE — READY TO IMPLEMENT; “FINAL” trong tên Final Architecture Review vẫn chỉ nghĩa finalized design review.
 - Giữ nguyên session cookie theo giai đoạn, DB least privilege, `/metrics` và `stub_status` ở Commit 2, CSP ở CP3; đồng bộ CP6/evidence/README/final review.
 - Các metric/dashboard Billing, LogQL project, pgAdmin DB connection và health/readiness service chưa chạy vẫn chờ checkpoint tương ứng; không tuyên bố application runtime PASS.
-- YC3/CP3 PASS ngày 2026-10-05: pinned Nginx, SAN certificate, HTTP redirect, HTTPS/TLS, headers/CSP, Secure session, login rate limiting, JSON access logs/request ID, health, network/ports và HTTPS CP2 regression được kiểm tra runtime; evidence ở `docs/evidence/RQ3-*`. YC4 chưa bắt đầu.
+- YC3/CP3 PASS ngày 2026-10-05: pinned Nginx, SAN certificate, HTTP redirect, HTTPS/TLS, headers/CSP, Secure session, login rate limiting, JSON access logs/request ID, health, network/ports và HTTPS CP2 regression được kiểm tra runtime; evidence ở `docs/evidence/RQ3-*`. Tại thời điểm hoàn tất CP3, YC4 chưa bắt đầu; CP4 được ghi nhận riêng bên dưới.
+- YC4/CP4 PASS ngày 2026-10-05; Commit 2 `7502aa7` và annotated tag `commit-2-monitoring` được tạo, không push. 6/6 targets UP; Prometheus/Grafana runtime, 15 dashboard panels và PromQL có dữ liệu; cAdvisor project filter, nginx/postgres exporters, app/business metrics, traffic, HTTPS CP2 regression, network/port/security và down/up persistence được kiểm tra. YC5 không bắt đầu.
+- Sau Commit 2, review phát hiện CPU/RAM cAdvisor query ban đầu có thể gộp container từ các Compose project khác cùng prefix. `monitoring/grafana/dashboards/billing-monitoring.json` trong working tree được sửa để lọc label `container_label_com_docker_compose_project="billing"`; 10 series CPU và 10 series RAM, Grafana API sau restart xác nhận query mới. Đây là follow-up YC4 **sau tag, chưa commit**; không amend/di chuyển `commit-2-monitoring`.
+- Evidence đã tạo: `docs/evidence/RQ4-01-prometheus-targets.png` và `docs/evidence/RQ4-07-prometheus-business-metric.png`. Ảnh riêng các row Grafana RQ4-02/03/04 còn thiếu và phải chụp trước YC7.
 
 ## Kết luận cuối
 
-DESIGN FREEZE — CP0, CP1a, CP2 và CP3 PASS. YC3 runtime evidence đã được ghi nhận; Commit 1/tag `commit-1-nginx` là bước Git tiếp theo sau staged verification. YC4 CHƯA BẮT ĐẦU.
+DESIGN FREEZE đã được triển khai tới hết YC4: CP0, CP1a, CP2, CP3 và CP4 PASS. HEAD `7502aa7`; annotated tag `commit-2-monitoring`; worktree sạch tại thời điểm tạo tag. Không push. YC5/CP5 chưa bắt đầu. Các ảnh Grafana rows RQ4-02/03/04 cùng YC1 final, YC6 và YC7 còn thiếu; follow-up filter dashboard sau tag hiện chưa commit.
