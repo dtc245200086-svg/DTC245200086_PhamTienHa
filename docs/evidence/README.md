@@ -15,6 +15,12 @@ Checkpoint evidence is added only after the corresponding runtime check passes. 
 | `RQ5-04-nginx-errors.png` | Q3 LogQL result containing real Nginx 4xx/5xx access events. |
 | `RQ5-05-invoice-payment-events.png` | Q4 LogQL result containing real invoice and payment events. |
 | `RQ5-06-dashboard-log-panel.png` | Optional Billing Monitoring dashboard log panel backed by Loki. |
+| `RQ6-01-non-root-execution.png` | H1 non-root container runtime verification across all services and documented exceptions. |
+| `RQ6-02-network-isolation.png` | H2 network isolation verification of 5 networks, internal flags, and membership. |
+| `RQ6-03-credentials-and-git.png` | H3 secret exclusion from Git (.env untracked) and rejection of default credentials. |
+| `RQ6-04-db-least-privilege.png` | H4 PostgreSQL least privilege enforcement (billing_app no DDL/append-only, billing_readonly SELECT-only, exporter in pg_monitor). |
+| `RQ6-05-port-exposure.png` | H6 port exposure audit proving internal database, web, and collector ports are unexposed. |
+| `RQ6-06-verify-hardening.png` | Automated hardening test suite (verify-hardening) execution report with all PASS results. |
 
 ### YC4 Evidence ID Map
 
@@ -42,5 +48,18 @@ IDs RQ4-01 through RQ4-06 follow the Design Freeze. The application-metric scree
 | RQ5-06 | Dashboard log panel | Optional; captured |
 
 CP5 required evidence RQ5-01 through RQ5-05 is present. RQ5-02 was replaced with the completed runtime label-browser view; no duplicate screenshot was added.
+
+### YC6 Evidence ID Map
+
+| ID | Evidence | Status |
+|---|---|---|
+| RQ6-01 | H1 non-root container execution | Captured: `RQ6-01-non-root-execution.png` |
+| RQ6-02 | H2 network isolation and membership | Captured: `RQ6-02-network-isolation.png` |
+| RQ6-03 | H3 credentials and Git secret exclusion | Captured: `RQ6-03-credentials-and-git.png` |
+| RQ6-04 | H4 PostgreSQL least privilege | Captured: `RQ6-04-db-least-privilege.png` |
+| RQ6-05 | H6 host port exposure matrix | Captured: `RQ6-05-port-exposure.png` |
+| RQ6-06 | Automated verify-hardening test suite | Captured: `RQ6-06-verify-hardening.png` |
+
+CP6 required evidence RQ6-01 through RQ6-05 is present; RQ6-06 provides automated verification report.
 
 Never store `.env` files, passwords, session secrets, private keys, or database dumps in this directory.

@@ -1038,14 +1038,14 @@ flowchart LR
 > Ghi chú runtime: stack được giữ nguyên; chỉ restart riêng `billing-loki-1` để kiểm chứng named-volume persistence. `billing_loki_data` được mount tại `/loki`, readiness trở lại PASS và query Q4 trả lại 21 log.
 
 ### CP6 — Hardening
-- [ ] H1–H6 **đều đạt**, mỗi biện pháp có ảnh
-- [ ] H2: `docker network inspect` cho 5 network; đối chiếu `internal` flags và membership từng service với ma trận; `docker ps`/`docker compose ps` chứng minh port mappings; web không publish sau Commit 1, postgres chỉ ở `db_net`, nginx không ở `db_net`
-- [ ] H2 không kết luận `web` không ra Internet chỉ từ `internal: true`; chỉ ghi kết luận egress nếu có TCP connectivity test bổ sung bằng tool đã xác minh ở CP0
-- [ ] H4: `billing_app` không DDL, không UPDATE/DELETE `payments`; `billing_readonly` chỉ SELECT; `exporter` chỉ có quyền giám sát cần thiết. Chạy psql bên trong PostgreSQL container hoặc client thuộc `db_net`, tuyệt đối không kiểm tra qua PostgreSQL localhost của Windows
-- [ ] `verify-hardening` gọi bài kiểm tra H4 qua container/network đúng, nhận diện lỗi quyền dự kiến và báo lỗi nếu thao tác trái phép thành công
-- [ ] Mỗi biện pháp tuỳ chọn được áp dụng đều đã kiểm thử service còn healthy
-- [ ] Đã viết bảng ngoại lệ và rủi ro còn lại
-- [ ] Hồi quy: web E2E, pgAdmin, Targets UP, LogQL OK
+- [x] H1–H6 **đều đạt**, mỗi biện pháp có ảnh và kết quả runtime verified (RQ6-01…RQ6-06)
+- [x] H2: `docker network inspect` cho 5 network; đối chiếu `internal` flags và membership từng service với ma trận; `docker ps`/`docker compose ps` chứng minh port mappings; web không publish sau Commit 1, postgres chỉ ở `db_net`, nginx không ở `db_net`
+- [x] H2 không kết luận `web` không ra Internet chỉ từ `internal: true`; chỉ ghi nhận cấu hình network và không đưa ra tuyên bố egress sai lệch
+- [x] H4: `billing_app` không DDL, không UPDATE/DELETE `payments`; `billing_readonly` chỉ SELECT; `exporter` chỉ có quyền giám sát cần thiết (`pg_monitor`). Chạy psql bên trong PostgreSQL container thuộc `db_net`
+- [x] `verify-hardening` gọi bài kiểm tra H4 qua container/network đúng, nhận diện lỗi quyền dự kiến và báo lỗi nếu thao tác trái phép thành công
+- [x] Mọi biện pháp tuỳ chọn và bắt buộc được áp dụng đều đã kiểm thử service còn healthy (12/12 container chạy, healthchecks đạt)
+- [x] Đã viết bảng ngoại lệ và rủi ro còn lại (cAdvisor `privileged: true`, Promtail docker.sock)
+- [x] Hồi quy: web E2E 15 nhóm PASS, pgAdmin UI/ping 200, Targets UP 6/6, LogQL Q2/Q3/Q4 OK
 
 ### CP-Final — YC1 hoàn tất
 - [ ] README đủ 16 mục (mục 3.17), gồm cookie theo giai đoạn, pgAdmin credential runtime và hướng dẫn kiểm tra H4
@@ -1148,7 +1148,7 @@ flowchart LR
 | 3 | Nginx proxy, TLS tự ký, 6 headers, web không publish | CP3 PASS; Commit 1 | RQ3-01…03, 05 | Nginx Reverse Proxy — 1.5 | ☒ |
 | 4 | Prometheus + cAdvisor/node/nginx/postgres exporter + app `/metrics` và Nginx `stub_status`; Grafana provisioned 3 row | CP4 kỹ thuật PASS; ảnh 3 row còn thiếu | RQ4-01 đã có; RQ4-02/03/04 cần chụp | Prometheus + Grafana — 1.5 | ☐ |
 | 5 | Loki + Promtail, label gọn, log JSON | CP5 PASS; Q2/Q3/Q4 có log thật; Commit 3/tag `commit-3-logging`=`3ff709cee127ce763ee45fa7477e3b8372d8318a` | RQ5-01…05 đã có | Loki — 1.5 | ☒ |
-| 6 | H1–H6 bắt buộc + tuỳ chọn đã test; ngoại lệ ghi rõ | CP6 | RQ6-01…05 + RQ3-03 | Hardening (≥ 3–4) — 1.5 | ☐ |
+| 6 | H1–H6 bắt buộc + tuỳ chọn đã test; ngoại lệ ghi rõ | CP6 PASS; H1-H6 runtime verified, verify-hardening PASS | RQ6-01…06 + RQ3-03 | Hardening (≥ 3–4) — 1.5 | ☒ |
 | 7 | Báo cáo ≥ 10 trang, bìa chuẩn; compose chạy trọn vẹn; demo; Q&A | CP7 | RQ7-01, 02 + toàn bộ ảnh B | Tổng thể & Trình bày — 1.0 | ☐ |
 | | | | | **10.0** | |
 
@@ -1226,18 +1226,18 @@ flowchart LR
 
 ## Kết luận
 
-**Current state tại Documentation Sync — 2026-10-06:** CP0=PASS; CP1a=PASS; YC2/CP2=PASS; YC3/CP3=PASS; YC4/CP4 technical=PASS; YC5/CP5=PASS; CP6/YC6 chưa chạy; CP7/YC7 chưa chạy. HEAD trước docs sync=`3ff709cee127ce763ee45fa7477e3b8372d8318a`; current HEAD là docs-only support commit sau Commit 3. Baselines remain `base-app=aa0d39222eddec12c41e7379550952ee83085a5e`; `commit-1-nginx=d179090de811925ee6b505311edb5c956fea4b98`; `commit-2-monitoring=7502aa7f067f99f6b976bc553bdc021b79561f48`; Commit 3/tag `commit-3-logging`=`3ff709cee127ce763ee45fa7477e3b8372d8318a`. Historical support commits are `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` and `25944eae9dd7546c31c2083f1e3b0400d43919f8`; neither is HEAD. No push.
+**Current state tại YC6 / CP6 — 2026-10-06:** CP0=PASS; CP1a=PASS; YC2/CP2=PASS; YC3/CP3=PASS; YC4/CP4 technical=PASS; YC5/CP5=PASS; CP6/YC6=PASS; CP7/YC7 chưa chạy. Baselines remain `base-app=aa0d39222eddec12c41e7379550952ee83085a5e`; `commit-1-nginx=d179090de811925ee6b505311edb5c956fea4b98`; `commit-2-monitoring=7502aa7f067f99f6b976bc553bdc021b79561f48`; Commit 3/tag `commit-3-logging`=`3ff709cee127ce763ee45fa7477e3b8372d8318a`. Tag `hardening` đại diện cho Commit 4 tại CP6. Historical support commits are `5743031f9c39a3960a87d40e92cb7eef5d9e40eb`, `25944eae9dd7546c31c2083f1e3b0400d43919f8`, và `32555a660f874624c20817e34cab9e37f1b26859`. No push.
 
-**Đã làm:** YC1a repository foundation; YC2 ứng dụng/DB/pgAdmin; YC3 Nginx HTTPS/security; YC4 monitoring Prometheus/Grafana ba nhóm; YC5 Loki/Promtail và LogQL. CP6 chưa chạy; không thực hiện hardening trong documentation sync.
+**Đã làm:** YC1a repository foundation; YC2 ứng dụng/DB/pgAdmin; YC3 Nginx HTTPS/security; YC4 monitoring Prometheus/Grafana ba nhóm; YC5 Loki/Promtail và LogQL; YC6 hardening: kiểm chứng toàn diện H1–H6, script `verify-hardening` đạt 100%, evidence RQ6-01…RQ6-06 đầy đủ.
 
 **Còn thiếu:**
-- YC1 final: hoàn thiện README theo đủ mục và evidence/index báo cáo. Commit `5743031` chưa push theo yêu cầu hiện tại.
+- YC1 final: hoàn thiện README theo đủ mục và evidence/index báo cáo.
 - YC4 technical CP4 = PASS, nhưng Final Evidence chưa hoàn tất: thiếu đúng RQ4-02 Grafana Container row, RQ4-03 Grafana Web row và RQ4-04 Grafana Database row. RQ4-07 là Prometheus business metric query, không thay thế ba row screenshots này.
 - YC5/CP5: PASS; Loki/Promtail, Loki datasource, Q2/Q3/Q4, evidence RQ5-01…RQ5-05, persistence và YC2–YC4 quick regression đã xác minh.
-- YC6/CP6: chưa nghiệm thu trọn bộ H1–H6, `verify-hardening`, negative tests và evidence.
+- YC6/CP6: PASS; H1–H6, verify-hardening, least-privilege negative tests và evidence RQ6-01…RQ6-06 đã hoàn tất.
 - YC7/CP7: chưa có báo cáo ≥10 trang, bìa, đủ screenshots, diễn tập demo và Q&A.
 
-**Current state:** Commit 1/2/3 tags remain immutable; `commit-3-logging` still points to `3ff709cee127ce763ee45fa7477e3b8372d8318a`. Historical support commit `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` contains the post-Commit-2 cAdvisor correction; `25944eae9dd7546c31c2083f1e3b0400d43919f8` is the pre-Commit-3 documentation reconciliation. Current HEAD is the docs-only support commit after Commit 3. No push; CP6/YC6 and CP7/YC7 remain unstarted.
+**Current state:** Commit 1/2/3 tags remain immutable. Commit 4/tag `hardening` gắn tại CP6. Historical support commits `5743031`, `25944ea`, `32555a6` được lưu vết. No push; CP7/YC7 và YC1 final chưa bắt đầu.
 
 ---
 
@@ -1260,4 +1260,4 @@ flowchart LR
 
 ## Kết luận cuối
 
-DOCUMENTATION SYNC status: CP0 PASS; CP1a PASS; CP2 PASS; CP3 PASS; CP4 technical PASS; CP5 PASS. Commit 1/2/3 tags are unchanged; Commit 3/tag `commit-3-logging` exists and points to `3ff709cee127ce763ee45fa7477e3b8372d8318a`. Current HEAD is the docs-only support commit after Commit 3. RQ4-02/03/04 remain uncaptured. YC6/CP6 and YC7/CP7 have not run. No push.
+CP6 HARDENING status: CP0 PASS; CP1a PASS; CP2 PASS; CP3 PASS; CP4 technical PASS; CP5 PASS; CP6 PASS. Commit 1/2/3 tags are unchanged; Commit 3/tag `commit-3-logging` points to `3ff709cee127ce763ee45fa7477e3b8372d8318a`. Commit 4/tag `hardening` represents CP6. RQ4-02/03/04 remain uncaptured. YC7/CP7 has not run. No push.

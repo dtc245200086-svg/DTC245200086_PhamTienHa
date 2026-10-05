@@ -241,3 +241,128 @@
 - **Status preserved:** CP0, CP1a, CP2, CP3, CP4 technical and CP5 remain PASS. YC6/CP6 and YC7/CP7 have not run. YC4 final evidence still lacks RQ4-02, RQ4-03 and RQ4-04. RQ5-01…RQ5-05 remain captured; RQ5-06 remains optional.
 - **Validation:** source docs, evidence index and LogQL state were cross-checked. Git tags and hashes were inspected before edits. No runtime tests were run because this prompt is documentation-only. No tag movement, amend, rebase, or push occurred.
 - **Result:** Documentation sync is in progress/uncommitted; no CP6 result is claimed. Current HEAD remains `3ff709cee127ce763ee45fa7477e3b8372d8318a`.
+
+## 2026-10-06 — YC6 / CP6 Runtime PASS and Commit 4
+
+- **PHASE / PROMPT:** PROMPT 7 — YC6 / HARDENING → COMMIT 4.
+- **Ngày giờ:** 2026-10-06 02:18:00 +07:00.
+- **Người thực hiện:** AI Assistant / Pair Programming.
+- **Checkpoint trước:** CP5 PASS, Commit 3 (`3ff709c`), tag `commit-3-logging`, support commit `32555a6` (`docs: sync project state before CP6`).
+- **Checkpoint sau:** CP6 PASS, Commit 4, tag `hardening`.
+
+- **Mục tiêu:**
+  Thực hiện toàn diện các biện pháp bảo mật và kiểm định runtime H1–H6 theo Design Freeze:
+  - H1: Non-root container runtime và các ngoại lệ được phê duyệt.
+  - H2: Cô lập network (5 network, internal flags, membership, không publish cổng nội bộ).
+  - H3: Mật khẩu mạnh, không secret trong Git, `.env` bị ignore, từ chối default credentials.
+  - H4: Least privilege DB trên PostgreSQL (`billing_app` cấm DDL/UPDATE/DELETE payments, `billing_readonly` chỉ SELECT, `exporter` trong `pg_monitor`).
+  - H5: TLS 1.2/1.3 + đủ 6 security headers + `server_tokens off`.
+  - H6: Không publish cổng nội bộ ra host.
+  - H11: Nginx login rate limit 5r/m (HTTP 429).
+  - H12: Ghim toàn bộ image version, không dùng tag `latest`.
+  - Tự động hóa kiểm thử bằng `scripts/verify-hardening.ps1` và `scripts/verify-hardening.sh`.
+  - Hồi quy toàn diện E2E nghiệp vụ, pgAdmin, Prometheus targets và LogQL.
+
+- **Đã kiểm tra trước:**
+  - `git status`: working tree clean tại HEAD `32555a660f874624c20817e34cab9e37f1b26859`.
+  - `docker compose ps`: toàn bộ 12 service đang chạy ổn định.
+  - Không có patch chưa kiểm thử nào trong `docker-compose.yml`.
+
+- **Đã thực hiện:**
+  1. H1 Runtime Verification:
+     - `web`: `uid=1000(node)` (non-root).
+     - `postgres`: các process DB chạy với `UID 999 (postgres)`.
+     - `nginx`: `uid=101(nginx)` (unprivileged).
+     - `grafana`: `uid=472(grafana)`.
+     - `prometheus`: `uid=65534(nobody)`.
+     - `loki`: `10001` (non-root distroless).
+     - `pgadmin`: `uid=5050(pgadmin)`.
+     - `node-exporter` & `postgres-exporter`: `uid=65534(nobody)`.
+     - `nginx-exporter`: `1001:1001`.
+     - Ngoại lệ được chấp thuận: `cadvisor` (`privileged: true`) và `promtail` (mount `docker.sock`).
+  2. H2 Network Isolation:
+     - Đầy đủ 5 network: `billing_edge_net` (false), `billing_admin_net` (false), `billing_app_net` (true), `billing_db_net` (true), `billing_monitoring_net` (true).
+     - `postgres` chỉ nằm trong `db_net`; `nginx` hoàn toàn tách biệt khỏi `db_net`.
+     - `web` không publish cổng sau Commit 1; `admin_net` tách biệt công cụ quản trị khỏi web và db.
+  3. H3 Credentials & Secrets:
+     - `git ls-files .env` trả về rỗng; `.env` được ignore bởi `.gitignore:2:.env`.
+     - `git ls-files .env.example` tồn tại và chỉ chứa placeholder.
+     - Đăng nhập Grafana với default `admin/admin` trả về `401 Unauthorized`.
+     - Kết nối PostgreSQL qua mạng với default `postgres/postgres` bị từ chối xác thực SCRAM-SHA-256.
+  4. H4 PostgreSQL Least Privilege:
+     - Chạy kiểm thử trực tiếp bên trong `db_net` qua `psql`:
+       - `billing_app` thử `DROP TABLE payments`: `ERROR: must be owner of table payments` (BỊ CHẶN).
+       - `billing_app` thử `CREATE TABLE test`: `ERROR: permission denied for schema public` (BỊ CHẶN).
+       - `billing_app` thử `UPDATE payments`: `ERROR: permission denied for table payments` (BỊ CHẶN - bảo toàn append-only).
+       - `billing_app` thử `DELETE FROM payments`: `ERROR: permission denied for table payments` (BỊ CHẶN).
+       - `billing_readonly` truy vấn `SELECT count(*) FROM invoices`: Thành công (329 rows).
+       - `billing_readonly` thử `INSERT INTO customers`: `ERROR: permission denied for table customers` (BỊ CHẶN).
+       - `billing_readonly` thử `UPDATE customers`: `ERROR: permission denied for table customers` (BỊ CHẶN).
+       - `billing_readonly` thử `DELETE FROM customers`: `ERROR: permission denied for table customers` (BỊ CHẶN).
+       - `billing_readonly` thử `SELECT * FROM users`: `ERROR: permission denied for table users` (BỊ CHẶN).
+       - Role `exporter` thuộc nhóm `pg_monitor`; target `postgres` UP trên Prometheus.
+  5. H5 Security Headers & TLS:
+     - `curl.exe -k -I https://localhost`: Đầy đủ 6 header (`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`).
+     - `Server: nginx` không lộ số phiên bản (`server_tokens off`).
+     - Bắt tay thành công với cả `TLSv1.2` và `TLSv1.3`.
+  6. H6 Port Exposure:
+     - Chỉ Nginx publish `0.0.0.0:80/443`.
+     - pgAdmin, Grafana, Prometheus chỉ bind loopback `127.0.0.1`.
+     - `web`, `postgres`, `loki`, `cadvisor`, exporters hoàn toàn không publish cổng ra host.
+  7. H11 Rate Limiting:
+     - Gửi 12 request liên tiếp tới `/api/auth/login` → 6 request đầu được xử lý, từ request thứ 7 trả về HTTP 429 Too Many Requests.
+  8. Tự động hóa kiểm thử:
+     - Xây dựng `scripts/verify-hardening.ps1` và `scripts/verify-hardening.sh`.
+     - Chạy script kiểm tra thực tế: Tất cả các kiểm tra H1–H6 đều PASS (100% OK).
+  9. Sinh minh chứng:
+     - Tạo 6 ảnh terminal/card evidence tại `docs/evidence/`: `RQ6-01-non-root-execution.png`, `RQ6-02-network-isolation.png`, `RQ6-03-credentials-and-git.png`, `RQ6-04-db-least-privilege.png`, `RQ6-05-port-exposure.png`, `RQ6-06-verify-hardening.png`.
+
+- **File đã tạo:**
+  - `scripts/verify-hardening.ps1`
+  - `scripts/verify-hardening.sh`
+  - `docs/evidence/RQ6-01-non-root-execution.png`
+  - `docs/evidence/RQ6-02-network-isolation.png`
+  - `docs/evidence/RQ6-03-credentials-and-git.png`
+  - `docs/evidence/RQ6-04-db-least-privilege.png`
+  - `docs/evidence/RQ6-05-port-exposure.png`
+  - `docs/evidence/RQ6-06-verify-hardening.png`
+
+- **File đã sửa:**
+  - `docs/evidence/README.md` (bổ sung YC6 evidence và ID map).
+  - `README.md` (cập nhật trạng thái CP6 PASS, hướng dẫn chạy verify-hardening).
+  - `FILEmd/billing_deployment_roadmap_2.md` (check off CP6 checklist, cập nhật rubric và kết luận).
+  - `docs/AI_EXECUTION_HISTORY.md` (append mục CP6).
+
+- **File đã xóa:** NONE.
+
+- **Thay đổi quan trọng:**
+  - Hệ thống đạt 100% các tiêu chí bảo mật H1–H6 mà không cần thay đổi file `docker-compose.yml` (kiến trúc ban đầu đã được thiết kế sẵn sàng).
+  - Tạo bộ công cụ kiểm thử tự động `verify-hardening` cho cả môi trường PowerShell và Bash.
+  - Bổ sung trọn vẹn bộ ảnh minh chứng RQ6-01..RQ6-06.
+
+- **Test đã chạy:**
+  - `scripts/verify-hardening.ps1`: PASS toàn bộ H1–H6.
+  - `scripts/cp2-smoke.mjs` qua HTTPS: PASS 15/15 nhóm kiểm thử nghiệp vụ (p95 = 22.57 ms).
+  - Prometheus targets: 6/6 UP.
+  - Grafana health: `database: ok`.
+  - Loki readiness: `ready`.
+
+- **Regression:**
+  - YC2–YC5 hoạt động hoàn toàn bình thường, không suy giảm hiệu năng hay lỗi cấu hình.
+
+- **Evidence:**
+  - `docs/evidence/RQ6-01-non-root-execution.png`
+  - `docs/evidence/RQ6-02-network-isolation.png`
+  - `docs/evidence/RQ6-03-credentials-and-git.png`
+  - `docs/evidence/RQ6-04-db-least-privilege.png`
+  - `docs/evidence/RQ6-05-port-exposure.png`
+  - `docs/evidence/RQ6-06-verify-hardening.png`
+
+- **Commit:** `security: harden containers, networks, credentials and database roles`
+- **Tag:** `hardening`
+
+- **NGOÀI ROADMAP:** NONE.
+
+- **Kết luận:** CP6 = PASS.
+- **Checkpoint tiếp theo:** CP-Final / YC1 Final (README hoàn thiện, clean clone, push tags).
+

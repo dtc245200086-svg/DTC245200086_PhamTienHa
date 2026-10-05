@@ -20,8 +20,9 @@
 - YC3 / CP3: **PASS**; website qua Nginx HTTPS tự ký, redirect, security headers/CSP, rate limit và JSON access log đã được kiểm tra runtime.
 - YC4 / CP4 technical: **PASS**; immutable Commit 2/tag `commit-2-monitoring`=`7502aa7f067f99f6b976bc553bdc021b79561f48`. Final evidence remains incomplete: RQ4-02, RQ4-03 and RQ4-04 are not captured.
 - YC5 / CP5: **PASS**; Loki, Promtail, Grafana Loki datasource, LogQL Q2–Q4, persistence and YC2–YC4 quick regression verified. Immutable Commit 3/tag `commit-3-logging`=`3ff709cee127ce763ee45fa7477e3b8372d8318a` records YC5.
-- Historical support commits: `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` (after Commit 2) and `25944eae9dd7546c31c2083f1e3b0400d43919f8` (documentation reconciliation before Commit 3). Neither is current HEAD.
-- Current HEAD is the documentation-sync support commit after Commit 3; Commit 3/tag `commit-3-logging` remains immutable. No push. YC6/CP6 and YC7/CP7 have not started.
+- YC6 / CP6: **PASS**; H1–H6 controls runtime verified (non-root UIDs, network isolation across 5 networks, secret protection, PostgreSQL least privilege, security headers/TLS 1.2/1.3, unexposed internal ports). Automated test suite `scripts/verify-hardening.ps1` and `.sh` passed with 100% checks OK. Tag `hardening` records YC6.
+- Historical support commits: `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` (after Commit 2), `25944eae9dd7546c31c2083f1e3b0400d43919f8` (before Commit 3), and `32555a660f874624c20817e34cab9e37f1b26859` (pre-CP6 docs sync).
+- YC7/CP7 and YC1 final have not started. No push.
 
 ## Công nghệ
 
@@ -89,7 +90,24 @@ Loki và Promtail chạy trong `monitoring_net`; Promtail chỉ giữ Docker tar
 
 ## Hardening YC6 / CP6
 
-YC6/CP6 chưa chạy. Khi kiểm tra H4, chạy `psql` bên trong container PostgreSQL hoặc từ client đã xác minh thuộc `db_net`; không dùng PostgreSQL của Windows tại `localhost:5432` để kết luận quyền DB. H1–H6 và regression chỉ được đánh dấu PASS sau khi có kết quả runtime cùng evidence.
+Hệ thống đã đạt đầy đủ 6 biện pháp hardening bắt buộc H1–H6 và các biện pháp bổ sung:
+- **H1 (Non-root containers):** `web` chạy user `node` (UID 1000); PostgreSQL process chạy user `postgres` (UID 999); Nginx chạy user `nginx` (UID 101); Grafana UID 472; Prometheus UID 65534; Loki UID 10001; exporters non-root. Ngoại lệ được chấp nhận: cAdvisor (`privileged: true`) và Promtail (socket Docker) theo mục 3.16.
+- **H2 (Network isolation):** 5 network độc lập; `app_net`, `db_net`, `monitoring_net` có `internal: true`. PostgreSQL chỉ nằm trong `db_net`; Nginx không thuộc `db_net`; `admin_net` tách biệt công cụ quản trị khỏi web và database.
+- **H3 (Credentials & Secrets):** File `.env` không bị track trong Git, được ignore; `.env.example` chỉ chứa placeholder; mật khẩu mặc định `admin/admin` của Grafana và default password của database bị từ chối (401 / auth failed).
+- **H4 (Least privilege DB):** Kiểm tra bằng `psql` trong `db_net`: `billing_app` bị cấm DDL và cấm UPDATE/DELETE bảng `payments` (bảo đảm append-only tài chính); `billing_readonly` chỉ được SELECT bảng nghiệp vụ, bị cấm INSERT/UPDATE/DELETE và cấm truy cập bảng `users`; `exporter` thuộc `pg_monitor`.
+- **H5 (Security headers & TLS):** 6 security headers bắt buộc (`HSTS`, `nosniff`, `DENY`, `Referrer-Policy`, `Permissions-Policy`, `CSP`); `server_tokens off` ẩn phiên bản Nginx; hỗ trợ TLS 1.2 và 1.3.
+- **H6 (Port exposure):** Chỉ Nginx mở `0.0.0.0:80/443`; công cụ quản trị (pgAdmin, Grafana, Prometheus) chỉ bind `127.0.0.1`; `web`, `postgres`, `loki`, `cadvisor`, exporters không publish cổng ra host.
+
+Chạy script kiểm tra tự động:
+```powershell
+.\scripts\verify-hardening.ps1
+```
+Hoặc trên Linux:
+```bash
+bash scripts/verify-hardening.sh
+```
+
+Toàn bộ minh chứng runtime được lưu tại `docs/evidence/RQ6-01` đến `RQ6-06`.
 
 ## Kiểm thử YC3/CP3
 
