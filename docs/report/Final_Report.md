@@ -42,7 +42,7 @@
 
 Đề 18 yêu cầu xây dựng website tạo và quản lý khách hàng, hóa đơn và thanh toán; dữ liệu nằm trong PostgreSQL, pgAdmin dùng để kiểm tra dữ liệu. Các yêu cầu hạ tầng gồm Docker Compose, Nginx reverse proxy, HTTPS, Prometheus/Grafana, Loki/LogQL và hardening.
 
-Hệ thống hiện gồm ứng dụng Node.js 24/Express, PostgreSQL 16, pgAdmin, Nginx unprivileged, sáu Prometheus scrape targets, Grafana, Loki và Promtail. Các checkpoint CP0–CP6 đã PASS; YC1 final/CP-Final được xác minh trong Prompt 8. YC7 hoàn thiện báo cáo, kịch bản demo diễn tập thực tế, Q&A và giải phóng toàn bộ blocker hành chính/GitHub. Commit 6/tag `v1.0` được tạo sau khi toàn bộ final release gates đạt PASS.
+Hệ thống hiện gồm ứng dụng Node.js 24/Express, PostgreSQL 16, pgAdmin, Nginx unprivileged, sáu Prometheus scrape targets, Grafana, Loki và Promtail. Các checkpoint CP0–CP6 đã PASS; YC1 final/CP-Final được xác minh trong Prompt 8. YC7 hoàn thiện báo cáo, kịch bản demo diễn tập thực tế, Q&A và giải phóng toàn bộ blocker hành chính/GitHub. Commit 6 (`fded947d98441446e8c424e657a51f88ea5edfbb`) và tag `v1.0` đã được tạo và phát hành.
 
 Mục tiêu của báo cáo là mô tả đúng phiên bản đang chạy và lịch sử Git bất biến, giải thích luồng nghiệp vụ và ranh giới bảo mật, đồng thời dẫn người đọc tới bằng chứng runtime đã capture. Báo cáo không biến CP4 technical PASS thành tuyên bố hoàn tất toàn bộ evidence: các ảnh Grafana RQ4-02/03/04 được ghi nhận riêng; RQ4-07 không thay thế chúng.
 
@@ -319,7 +319,7 @@ Evidence filenames and descriptions are maintained in `docs/evidence/README.md`.
 | Docs support before Commit 4 | — | `32555a660f874624c20817e34cab9e37f1b26859` |
 | Commit 4 — H1–H6 hardening | `hardening` | `94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48` |
 | Commit 5 — YC1 final docs | `docs-final` | `2141b24f7cab17e57118aea39aaadd7c3dffef59` |
-| Commit 6 — YC7 report/demo | `v1.0` | Target final release milestone commit |
+| Commit 6 — YC7 report/demo | `v1.0` | `fded947d98441446e8c424e657a51f88ea5edfbb` |
 
 **Limitations:** self-signed TLS is for demo; cAdvisor/node-exporter observe Docker Desktop Linux VM; Promtail is EOL and has Docker socket access; cAdvisor is privileged; invoice sequence allows gaps and does not reset annually; `.env` password changes do not alter an initialized DB volume. WSL Docker CLI is unavailable in this environment, while Windows Git Bash and Docker Desktop were used for verification.
 

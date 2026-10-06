@@ -16,7 +16,7 @@
 | 9 | Mở Grafana dashboard `Billing Monitoring` | Chỉ ra ba row Container/Web/Database; Prometheus Targets 6/6 UP; dùng ảnh RQ4-02/03/04 | “Mỗi row có nguồn dữ liệu riêng; đây là panel runtime thật.” |
 | 10 | Grafana Explore → Loki, chạy Q2, Q3, Q4 | Q2 failed login; Q3 Nginx 4xx/5xx; Q4 invoice/payment events trả log thật | “Promtail thu Docker logs; label giữ gọn để tránh cardinality cao.” |
 | 11 | Chạy `powershell -ExecutionPolicy Bypass -File scripts/verify-hardening.ps1` hoặc `& 'C:\Program Files\Git\bin\bash.exe' scripts/verify-hardening.sh` | Tất cả H1–H6 PASS; Git Bash không còn grep warning | “Verifier thực hiện negative tests, network và port checks; secrets không in ra.” |
-| 12 | Chạy `git log --oneline --decorate -8` và `git tag --list` | Thấy Commit 1/2/3, `hardening`, `docs-final`, và sau CP7 là Commit 6/`v1.0` | “Các tag mốc bất biến; support commits ghi nhận tài liệu và sửa chữa sau checkpoint.” |
+| 12 | Chạy `git log --oneline --decorate -8` và `git tag --list` | Thấy Commit 1/2/3, `hardening`, `docs-final`, và Commit 6/`v1.0` (HEAD = `fded947`) | “Các tag mốc bất biến; support commits ghi nhận tài liệu và sửa chữa sau checkpoint.” |
 
 ## Lệnh LogQL
 

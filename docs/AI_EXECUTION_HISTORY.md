@@ -431,5 +431,5 @@
   - Biên dịch lại: `Final_Report.html`, `Final_Report.docx`, `Final_Report.pdf` (18 trang, đủ các mục).
   - Cập nhật danh mục bằng chứng `docs/evidence/README.md`, `README.md`, và roadmap Design Freeze.
 - **Final Release Gate:** **PASS**. Toàn bộ 7 yêu cầu (YC1–YC7) và các checkpoint CP0–CP7 đều hoàn thành xuất sắc.
-- **Commit 6:** `docs(report): add final report and demo script`
-- **Tag:** `v1.0`
+- **Commit 6:** `fded947d98441446e8c424e657a51f88ea5edfbb` (`docs(report): add final report and demo script`)
+- **Tag:** `v1.0` dereferencing to `fded947d98441446e8c424e657a51f88ea5edfbb` (current HEAD)

@@ -9,10 +9,18 @@
 > **TRẠNG THÁI HIỆN TẠI — 2026-10-06**
 > - CP0, CP1a, CP2, CP3, CP4, CP5, CP6, YC1 final và CP7 final release = **PASS**.
 > - Remote repository chính thức: `https://github.com/nguyenthinga27052006-cpu/Billing_One.git`.
-> - Immutable refs: `base-app=aa0d39222eddec12c41e7379550952ee83085a5e`; `commit-1-nginx=d179090de811925ee6b505311edb5c956fea4b98`; `commit-2-monitoring=7502aa7f067f99f6b976bc553bdc021b79561f48`; `commit-3-logging=3ff709cee127ce763ee45fa7477e3b8372d8318a`; `hardening=94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`; `docs-final=2141b24f7cab17e57118aea39aaadd7c3dffef59`.
+> - Current HEAD: `fded947d98441446e8c424e657a51f88ea5edfbb` (Commit 6 / tag `v1.0`).
+> - Milestone commits & tags:
+>   - `base-app`: `aa0d39222eddec12c41e7379550952ee83085a5e` (Commit 0b)
+>   - `commit-1-nginx`: `d179090de811925ee6b505311edb5c956fea4b98` (Commit 1)
+>   - `commit-2-monitoring`: `7502aa7f067f99f6b976bc553bdc021b79561f48` (Commit 2)
+>   - `commit-3-logging`: `3ff709cee127ce763ee45fa7477e3b8372d8318a` (Commit 3)
+>   - `hardening`: `94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48` (Commit 4)
+>   - `docs-final`: `2141b24f7cab17e57118aea39aaadd7c3dffef59` (Commit 5)
+>   - `v1.0`: `fded947d98441446e8c424e657a51f88ea5edfbb` (Commit 6, HEAD)
 > - Historical support commits remain `5743031f9c39a3960a87d40e92cb7eef5d9e40eb`, `25944eae9dd7546c31c2083f1e3b0400d43919f8`, and `32555a660f874624c20817e34cab9e37f1b26859`; no old commit or tag is rewritten.
 > - Evidence matrix hoàn thiện 100%: RQ1-01…04 captured từ GitHub remote; RQ2, RQ3, RQ4, RQ5, RQ6, RQ7 đầy đủ trên đĩa.
-> - Demo rehearsal xác minh thành công ≤ 10 phút. Toàn bộ release gates thỏa mãn. Commit 6 và tag `v1.0` được phát hành.
+> - Demo rehearsal xác minh thành công ≤ 10 phút. Toàn bộ release gates thỏa mãn. Commit 6 (`fded947`) và tag `v1.0` đã phát hành.
 
 
 ---
@@ -1079,7 +1087,7 @@ flowchart LR
 | **3** | **`commit-3-logging`** | `feat(logging): centralized logging with Loki, Promtail and LogQL queries` | Loki, Promtail, datasource Loki, panel log, `logql-queries.md` | **YC5** |
 | 4 | `hardening` | `security: harden containers, networks, credentials and database roles` | H1–H6 hardening, verifier scripts và CP6 evidence | YC6 |
 | 5 | `docs-final` | `docs: complete README, architecture diagrams and evidence index` | README, Design Freeze/current state, execution history, evidence index, Git plan, LF/grep portability fixes | YC1 final |
-| 6 | `v1.0` | `docs(report): add final report and demo script` | Report/demo/Q&A/evidence after CP7 PASS; **not created because gate is blocked** | YC7 |
+| 6 | `v1.0` | `docs(report): add final report and demo script` | Báo cáo, kịch bản demo, Q&A, evidence; Commit 6 = `fded947d98441446e8c424e657a51f88ea5edfbb`, tag `v1.0` phát hành | YC7 |
 
 **Quy tắc:**
 - Commit 1 **không** chứa Prometheus/Grafana/exporter/`/metrics`/`stub_status`.
@@ -1189,9 +1197,9 @@ flowchart LR
 
 | Mục | Trạng thái | Ghi chú |
 |---|---|---|
-| Bám Đề 18 | YC1a–YC6 và YC1 final đã qua checkpoint tương ứng | Runtime kỹ thuật đã xác minh; YC7 artifacts chuẩn bị nhưng CP7 gate BLOCKED |
-| Bám 7 YC | YC1a/YC2/YC3/YC4/YC5/YC6/YC1 final PASS | YC7 report/demo/Q&A có; CP7 chưa PASS |
-| Rubric 10 điểm | Chưa nghiệm thu toàn bộ | CP0–CP6 kỹ thuật và YC1 final PASS; RQ4 rows captured; RQ1 remote captures, cover metadata và demo rehearsal còn thiếu |
+| Bám Đề 18 | YC1–YC7 hoàn tất | Runtime kỹ thuật, tài liệu, remote GitHub và demo rehearsal đã xác minh; CP7 PASS |
+| Bám 7 YC | YC1–YC7 đều PASS | YC1..YC7 hoàn tất đầy đủ, không thiếu mục nào |
+| Rubric 10 điểm | Nghiệm thu toàn bộ | CP0–CP7 PASS; RQ1..RQ7 đầy đủ, cover metadata chính thức, demo rehearsal ≤ 10 phút PASS |
 | FR/NFR nhất quán | YC2–YC4 đã có runtime regression | CSP và Nginx ở CP3; log JSON ở CP2; metrics ở CP4; logging tập trung thuộc CP5 |
 | BR nhất quán | CP2 regression PASS | Sequence, NUMERIC, transaction và payment locking đã được kiểm tra trong CP2 |
 | Auth nhất quán | Được chốt ở mức thiết kế | express-session, PostgreSQL store, bcrypt, không JWT; cookie chuyển theo `SESSION_COOKIE_SECURE` |
@@ -1208,17 +1216,17 @@ flowchart LR
 | Hardening | CP6 runtime PASS | H1–H6 đã được xác minh; PowerShell và Windows Git Bash verifiers PASS; Bash H6 dùng `grep --`; `.gitattributes` giữ script ở LF |
 | Healthcheck | CP2–CP4 runtime PASS cho healthchecks đã khai báo | Postgres, web, Nginx, cAdvisor healthy; các exporter targets UP; không gán trạng thái healthy cho service không có healthcheck |
 | pgAdmin credential | CP0 PASS ngày 2026-10-05 | pgAdmin UI/import/runtime password/DB connection/table đều đạt với probe tạm; không có password trong JSON |
-| Evidence | CP2–CP6 và CP7 Grafana rows | RQ4-01/02/03/04/07 captured; RQ1-01…04 remote GitHub captures missing without push; RQ7-01 partial because school/course data absent; RQ7-02 diagram embedded in report |
-| README | YC1 final update PASS | Mô tả runtime/architecture, image policy, runbook, limitations, tag/hash map và evidence gaps |
-| Git commit plan | Commit 1–4 và support commits đã tạo | Commit 4/tag `hardening`=`94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`, nội dung H1–H6 + verifier/evidence; Commit 5/tag `docs-final` ghi nhận snapshot YC1 final, không push |
-| Môi trường | CP0–CP6 runtime gates and YC1 clean-clone PASS; current CP7 runtime checks PASS | Docker Desktop/Compose; WSL thiếu Docker CLI là environment limitation; CP7 final is blocked on non-runtime evidence/metadata/rehearsal |
+| Evidence | Toàn bộ RQ1–RQ7 | RQ1-01…04 captured từ GitHub remote; RQ2, RQ3, RQ4, RQ5, RQ6, RQ7 đầy đủ trên đĩa |
+| README | YC1–YC7 hoàn thiện | Mô tả runtime/architecture, image policy, runbook, limitations, tag/hash map đầy đủ các mốc đến Commit 6/v1.0 |
+| Git commit plan | Commit 1–6 và tags đã tạo | Commit 6/tag `v1.0` = `fded947d98441446e8c424e657a51f88ea5edfbb`; current HEAD = Commit 6 |
+| Môi trường | CP0–CP7 runtime & clean-clone PASS | Docker Desktop/Compose; WSL thiếu Docker CLI là environment limitation; tất cả gates PASS |
 
 ## Self-audit — 10 câu hỏi
 
 | # | Câu hỏi | Kết quả rà soát tài liệu |
 |---|---|---|
 | 1 | Có còn lỗi kiến trúc đã biết không? | CP4 phát hiện và sửa filter cAdvisor để loại các Compose project ngoài `billing`; các YC còn lại phải kiểm tra ở checkpoint tương ứng |
-| 2 | YC1–YC7 có được bao phủ không? | Có roadmap/evidence plan; CP0–CP6 và YC1 final PASS; YC7 artifacts exist, CP7 gate BLOCKED |
+| 2 | YC1–YC7 có được bao phủ không? | Có; toàn bộ YC1–YC7 và CP0–CP7 đã PASS, v1.0 đã phát hành |
 | 3 | 3 commit mốc có đúng thứ tự không? | Commit 1 Nginx=`d179090` → Commit 2 Monitoring=`7502aa7` → Commit 3 Logging/tag `commit-3-logging`; các tag cũ không đổi |
 | 4 | YC2 có hoạt động mà chưa cần Nginx không? | YC2 đã được xác minh tại CP2 và PASS: web tạm bind `127.0.0.1:8000`, cookie `SESSION_COOKIE_SECURE=false`; Commit 1 sau đó gỡ publish |
 | 5 | Commit 1 có thực sự chỉ là Nginx không? | Có; `commit-1-nginx` giữ nguyên ở `d179090`, Commit 2 không rollback Nginx |

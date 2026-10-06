@@ -9,12 +9,12 @@
 | Họ tên | Phạm Tiến Hà |
 | Lớp | CNTT K23G |
 | GVHD | Vũ Việt Dũng |
-| GitHub username | `dtc245200086-svg` |
-| Repository | `DTC245200086_PhamTienHa` |
+| GitHub remote | `https://github.com/nguyenthinga27052006-cpu/Billing_One.git` |
+| Repository | `nguyenthinga27052006-cpu/Billing_One` |
 
 ## Mục tiêu và phạm vi
 
-Đề 18 xây dựng hệ thống quản lý khách hàng, hóa đơn và thanh toán chạy bằng Docker Compose, dùng PostgreSQL làm dữ liệu nghiệp vụ và pgAdmin để kiểm tra dữ liệu. Phạm vi đã triển khai gồm ứng dụng Node.js/Express, Nginx HTTPS, monitoring Prometheus/Grafana, logging Loki/Promtail và hardening H1–H6. YC7 (báo cáo và diễn tập demo) chưa bắt đầu.
+Đề 18 xây dựng hệ thống quản lý khách hàng, hóa đơn và thanh toán chạy bằng Docker Compose, dùng PostgreSQL làm dữ liệu nghiệp vụ và pgAdmin để kiểm tra dữ liệu. Toàn bộ phạm vi từ YC1–YC7 đã hoàn thành gồm ứng dụng Node.js/Express, Nginx HTTPS, monitoring Prometheus/Grafana, logging Loki/Promtail, hardening H1–H6, và CP7 final release với báo cáo, kịch bản demo và repository GitHub đồng bộ.
 
 ## Trạng thái
 
@@ -139,7 +139,7 @@ Hoặc trên Bash có `curl` và `jq`:
 bash scripts/load-test.sh
 ```
 
-Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag `commit-2-monitoring` vẫn ở `7502aa7`; Commit 3/tag `commit-3-logging` vẫn trỏ tới `3ff709cee127ce763ee45fa7477e3b8372d8318a`. Các support commits là historical. Pre-Commit-5 baseline là HEAD/tag `hardening`=`94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`; Commit 5/tag `docs-final` records the YC1 final snapshot. Không push.
+Script tạo customer/invoice/payment với prefix `YC4 LOAD`, gửi login sai và 404; dữ liệu được giữ trong PostgreSQL, không tự xóa. Commit 2/tag `commit-2-monitoring` vẫn ở `7502aa7`; Commit 3/tag `commit-3-logging` vẫn trỏ tới `3ff709cee127ce763ee45fa7477e3b8372d8318a`. Các support commits là historical. Baseline commit/tag `hardening`=`94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`; Commit 5/tag `docs-final`=`2141b24f7cab17e57118aea39aaadd7c3dffef59`; Commit 6/tag `v1.0`=`fded947d98441446e8c424e657a51f88ea5edfbb` (current HEAD).
 
 ## Logging YC5 / CP5
 
@@ -182,8 +182,8 @@ Toàn bộ minh chứng runtime được lưu tại `docs/evidence/RQ6-01` đế
 | Commit 3 — Logging | `commit-3-logging` | `3ff709cee127ce763ee45fa7477e3b8372d8318a` |
 | Docs support before Commit 4 | — | `32555a660f874624c20817e34cab9e37f1b26859` |
 | Commit 4 — H1–H6 hardening, verifiers and evidence | `hardening` | `94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48` |
-| Commit 5 — YC1 final documentation | `docs-final` | This final documentation snapshot; exact target is recorded by the tag |
-| Commit 6 — YC7 report/demo | `v1.0` | Target final release milestone commit |
+| Commit 5 — YC1 final documentation | `docs-final` | `2141b24f7cab17e57118aea39aaadd7c3dffef59` |
+| Commit 6 — YC7 report/demo | `v1.0` | `fded947d98441446e8c424e657a51f88ea5edfbb` (HEAD) |
 
 Runtime screenshots and their status are indexed in [docs/evidence/README.md](docs/evidence/README.md). RQ4-02/03/04 are captured separately; RQ4-07 remains a distinct Prometheus business-metric capture. The [final report](docs/report/Final_Report.pdf), [demo script](docs/report/Demo_Script.md) and [Q&A](docs/report/QA.md) are completed. All CP7 release gates and evidence requirements are satisfied.
 
