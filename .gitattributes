@@ -1,0 +1,5 @@
+db/init/02-roles.sh text eol=lf
+db/init/03-seed.sh text eol=lf
+scripts/gen-cert.sh text eol=lf
+scripts/load-test.sh text eol=lf
+scripts/verify-hardening.sh text eol=lf

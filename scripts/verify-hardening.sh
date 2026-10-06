@@ -205,14 +205,14 @@ fi
 
 # --- H6: Port exposure ---
 web_ports=$(docker ps --filter "name=billing-web-1" --format "{{.Ports}}")
-if echo "$web_ports" | grep -q '->'; then
+if echo "$web_ports" | grep -q -- '->'; then
   report_check "H6.1" "web container internal port 3000 is NOT published" 0 "Port published: $web_ports"
 else
   report_check "H6.1" "web container internal port 3000 is NOT published" 1 "Internal port only"
 fi
 
 pg_ports=$(docker ps --filter "name=billing-postgres-1" --format "{{.Ports}}")
-if echo "$pg_ports" | grep -q '->'; then
+if echo "$pg_ports" | grep -q -- '->'; then
   report_check "H6.2" "postgres container internal port 5432 is NOT published" 0 "Port published: $pg_ports"
 else
   report_check "H6.2" "postgres container internal port 5432 is NOT published" 1 "Internal port only"

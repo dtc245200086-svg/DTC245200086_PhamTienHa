@@ -27,9 +27,9 @@ Checkpoint evidence is added only after the corresponding runtime check passes. 
 | ID | Evidence | Status |
 |---|---|---|
 | RQ4-01 | Prometheus Targets | Captured: `RQ4-01-prometheus-targets.png` |
-| RQ4-02 | Grafana Container row | Not captured; required for final report |
-| RQ4-03 | Grafana Web row | Not captured; required for final report |
-| RQ4-04 | Grafana Database row | Not captured; required for final report |
+| RQ4-02 | Grafana Container row | **MISSING**; required for final report |
+| RQ4-03 | Grafana Web row | **MISSING**; required for final report |
+| RQ4-04 | Grafana Database row | **MISSING**; required for final report |
 | RQ4-05 | Prometheus datasource/provisioning | Runtime API verified; screenshot optional and not captured |
 | RQ4-06 | Before/after load-test data | Runtime queries verified; screenshot optional and not captured |
 | RQ4-07 | Prometheus application/business metric query | Captured: `RQ4-07-prometheus-business-metric.png` |
