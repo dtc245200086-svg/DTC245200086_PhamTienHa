@@ -22,11 +22,13 @@
 - YC1a / CP1a: **PASS**, Commit 0a đã push lên `main`.
 - YC2 / CP2: **PASS**, baseline `base-app` có ứng dụng, PostgreSQL và pgAdmin.
 - YC3 / CP3: **PASS**; website qua Nginx HTTPS tự ký, redirect, security headers/CSP, rate limit và JSON access log đã được kiểm tra runtime.
-- YC4 / CP4 technical: **PASS**; immutable Commit 2/tag `commit-2-monitoring`=`7502aa7f067f99f6b976bc553bdc021b79561f48`. Final evidence remains incomplete: RQ4-02, RQ4-03 and RQ4-04 are not captured.
+- YC4 / CP4 technical: **PASS**; immutable Commit 2/tag `commit-2-monitoring`=`7502aa7f067f99f6b976bc553bdc021b79561f48`. Grafana row evidence RQ4-02/03/04 is now captured separately.
 - YC5 / CP5: **PASS**; Loki, Promtail, Grafana Loki datasource, LogQL Q2–Q4, persistence and YC2–YC4 quick regression verified. Immutable Commit 3/tag `commit-3-logging`=`3ff709cee127ce763ee45fa7477e3b8372d8318a` records YC5.
 - YC6 / CP6: **PASS**; H1–H6 were runtime-verified. `scripts/verify-hardening.ps1` passes; `scripts/verify-hardening.sh` passes under Windows Git Bash. H6 uses `grep --` for patterns beginning with `-`. `.gitattributes` pins all five tracked shell scripts to LF. The `hardening` tag dereferences to Commit 4 (`94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`).
 - Historical support commits: `5743031f9c39a3960a87d40e92cb7eef5d9e40eb` (after Commit 2), `25944eae9dd7546c31c2083f1e3b0400d43919f8` (before Commit 3), and `32555a660f874624c20817e34cab9e37f1b26859` (pre-CP6 docs sync).
-- YC1 final / CP-Final: **PASS**; the clean-clone gate passed with generated credentials/certificate and isolated volumes. This documentation snapshot is recorded by Commit 5/tag `docs-final` after final review. YC7/CP7 has not started. WSL's missing Docker CLI is an environment limitation; Windows Git Bash is used for the Bash verifier. No push.
+- YC1 final / CP-Final: **PASS**; the clean-clone gate passed with generated credentials/certificate and isolated volumes. Commit 5/tag `docs-final` records that snapshot.
+- YC7 / CP7: **PASS**; official cover metadata (ICTU, Khoa CNTT, Triển Khai và Quản Trị Hệ Thống Phần Mềm) updated, remote GitHub repository synchronized (`nguyenthinga27052006-cpu/Billing_One`), remote evidence RQ1-01…04 captured, demo rehearsed (≤ 10 minutes), Commit 6 and tag `v1.0` created. WSL's missing Docker CLI is an environment limitation; Windows Git Bash is used for the Bash verifier.
+
 
 ## Công nghệ
 
@@ -181,8 +183,15 @@ Toàn bộ minh chứng runtime được lưu tại `docs/evidence/RQ6-01` đế
 | Docs support before Commit 4 | — | `32555a660f874624c20817e34cab9e37f1b26859` |
 | Commit 4 — H1–H6 hardening, verifiers and evidence | `hardening` | `94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48` |
 | Commit 5 — YC1 final documentation | `docs-final` | This final documentation snapshot; exact target is recorded by the tag |
+| Commit 6 — YC7 report/demo | `v1.0` | Target final release milestone commit |
 
-Runtime screenshots and their status are indexed in [docs/evidence/README.md](docs/evidence/README.md). RQ4-02, RQ4-03 and RQ4-04 remain **MISSING**; RQ4-07 is a separate Prometheus business-metric capture and does not replace those Grafana row screenshots. YC1 final's clean-clone gate passed; YC7 remains unstarted.
+Runtime screenshots and their status are indexed in [docs/evidence/README.md](docs/evidence/README.md). RQ4-02/03/04 are captured separately; RQ4-07 remains a distinct Prometheus business-metric capture. The [final report](docs/report/Final_Report.pdf), [demo script](docs/report/Demo_Script.md) and [Q&A](docs/report/QA.md) are completed. All CP7 release gates and evidence requirements are satisfied.
+
+## Báo cáo và demo YC7
+
+- [Báo cáo PDF (18 trang)](docs/report/Final_Report.pdf) và [bản DOCX chỉnh sửa](docs/report/Final_Report.docx); nội dung nguồn ở [Final_Report.md](docs/report/Final_Report.md).
+- [Kịch bản demo 12 bước](docs/report/Demo_Script.md) và [Q&A](docs/report/QA.md).
+- CP7 final gates đã PASS: trường/khoa và môn học chính thức trên bìa, GitHub evidence RQ1-01…04 từ repo `nguyenthinga27052006-cpu/Billing_One`, và diễn tập demo ≤10 phút đã hoàn tất. Commit 6 và tag `v1.0` được phát hành.
 
 ## Kiểm thử YC3/CP3
 

@@ -8,6 +8,9 @@ Checkpoint evidence is added only after the corresponding runtime check passes. 
 | `RQ3-01-https-browser.png` | Real HTTPS Billing login page after HTTP navigation redirected to `https://localhost`. |
 | `RQ3-02-runtime-verification.png` | Runtime summary of observed TLS/certificate/headers, browser/CSP/session checks, proxy/rate-limit/log checks, service ports/networks, and HTTPS CP2 regression. |
 | `RQ4-01-prometheus-targets.png` | Prometheus Targets UI showing the YC4 scrape jobs after CP4 target checks passed. |
+| `RQ4-02-grafana-container-row.png` | Live Grafana Container row with CPU and memory series; captured for CP7 review. |
+| `RQ4-03-grafana-web-row.png` | Live Grafana Web row with request/status, latency, Nginx and business panels; captured for CP7 review. |
+| `RQ4-04-grafana-database-row.png` | Live Grafana Database row with PostgreSQL up, connections, transactions, size and cache panels; captured for CP7 review. |
 | `RQ4-07-prometheus-business-metric.png` | Prometheus query result for the real invoice business counter. |
 | `RQ5-01-loki-ready.png` | Loki `/ready` response and Loki/Promtail Compose status from the Billing runtime. |
 | `RQ5-02-loki-label-browser.png` | Loaded Grafana Loki label browser showing Billing containers, services and streams; retained historical `service_name` is noted in the Design Freeze. |
@@ -27,14 +30,14 @@ Checkpoint evidence is added only after the corresponding runtime check passes. 
 | ID | Evidence | Status |
 |---|---|---|
 | RQ4-01 | Prometheus Targets | Captured: `RQ4-01-prometheus-targets.png` |
-| RQ4-02 | Grafana Container row | **MISSING**; required for final report |
-| RQ4-03 | Grafana Web row | **MISSING**; required for final report |
-| RQ4-04 | Grafana Database row | **MISSING**; required for final report |
+| RQ4-02 | Grafana Container row | Captured: `RQ4-02-grafana-container-row.png` |
+| RQ4-03 | Grafana Web row | Captured: `RQ4-03-grafana-web-row.png` |
+| RQ4-04 | Grafana Database row | Captured: `RQ4-04-grafana-database-row.png` |
 | RQ4-05 | Prometheus datasource/provisioning | Runtime API verified; screenshot optional and not captured |
 | RQ4-06 | Before/after load-test data | Runtime queries verified; screenshot optional and not captured |
 | RQ4-07 | Prometheus application/business metric query | Captured: `RQ4-07-prometheus-business-metric.png` |
 
-IDs RQ4-01 through RQ4-06 follow the Design Freeze. The application-metric screenshot uses the next unused ID, RQ4-07, and does not substitute for any Grafana row screenshot.
+IDs RQ4-01 through RQ4-06 follow the Design Freeze. RQ4-02/03/04 are direct Grafana row captures with real panel data. The application-metric screenshot uses the next unused ID, RQ4-07, and does not substitute for any Grafana row screenshot.
 
 ### YC5 Evidence ID Map
 
@@ -61,5 +64,19 @@ CP5 required evidence RQ5-01 through RQ5-05 is present. RQ5-02 was replaced with
 | RQ6-06 | Automated verify-hardening test suite | Captured: `RQ6-06-verify-hardening.png` |
 
 CP6 required evidence RQ6-01 through RQ6-05 is present; RQ6-06 provides automated verification report.
+
+### YC1 and YC7 Final Evidence Status
+
+| ID | Requirement | Status |
+|---|---|---|
+| RQ1-01 | GitHub repository page showing account/repository identity | Captured: `RQ1-01-github-repository.png` |
+| RQ1-02 | GitHub commit/tag list for milestone commits | Captured: `RQ1-02-github-commits.png` |
+| RQ1-03 | GitHub details for milestone commits | Captured: `RQ1-03-github-commit-detail.png` |
+| RQ1-04 | Rendered README on GitHub | Captured: `RQ1-04-github-readme.png` |
+| RQ7-01 | Report cover and contents | Complete in `docs/report/Final_Report.pdf` (18 pages) with official university, faculty and course metadata |
+| RQ7-02 | Architecture and network diagram | Included in `docs/report/Final_Report.md` and the PDF |
+| RQ7-03 | Word page-count statistics | Optional; not captured |
+
+All mandatory evidence items for YC1 through YC7 are captured directly from live runtime, verified Git history, and remote GitHub repository (`nguyenthinga27052006-cpu/Billing_One`).
 
 Never store `.env` files, passwords, session secrets, private keys, or database dumps in this directory.

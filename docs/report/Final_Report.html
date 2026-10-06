@@ -1,0 +1,177 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Báo cáo Đề 18 Billing</title><style>@page{size:A4;margin:15mm 16mm 17mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#202833;font-size:9.5pt;line-height:1.28;margin:0}.page{page-break-after:always;break-after:page;min-height:265mm;position:relative}.page:last-child{page-break-after:auto;break-after:auto}h1{font-size:19pt;color:#17324d;margin:0 0 12pt}h2{font-size:15pt;color:#245477;margin:0 0 12pt}h3{font-size:11pt;color:#245477;margin:10pt 0 4pt}p{margin:0 0 7pt}ul,ol{margin:3pt 0 7pt;padding-left:20pt}li{margin:0 0 3pt}table{border-collapse:collapse;width:100%;font-size:8pt;margin:6pt 0 9pt;page-break-inside:avoid}th,td{border:1px solid #97a9b8;padding:4pt 5pt;vertical-align:top}th{background:#e8f0f5;color:#17324d;text-align:left}pre{white-space:pre-wrap;background:#f2f5f7;border:1px solid #d7e0e6;padding:7pt;font-family:Consolas,monospace;font-size:8pt}code{font-family:Consolas,monospace;font-size:.94em}figure{margin:6pt 0 8pt;text-align:center;page-break-inside:avoid}figure img{max-width:100%;max-height:105mm;object-fit:contain}figcaption{font-size:8pt;color:#526575;margin-top:3pt}a{color:#145d87;text-decoration:none}hr{border:0;border-top:1px solid #cad4dc;margin:8pt 0}</style></head><body><section class="page"><h1>BÁO CÁO ĐỒ ÁN — ĐỀ 18</h1>
+<h2>HỆ THỐNG QUẢN LÝ HÓA ĐƠN / BILLING</h2>
+<p><strong>Trường:</strong> Trường Đại học Công nghệ Thông tin và Truyền thông (ICTU) <strong>Khoa:</strong> Khoa Công nghệ thông tin <strong>Môn học:</strong> Triển Khai và Quản Trị Hệ Thống Phần Mềm <strong>Giảng viên hướng dẫn:</strong> Vũ Việt Dũng <strong>Sinh viên:</strong> Phạm Tiến Hà <strong>MSSV:</strong> DTC245200086 <strong>Lớp:</strong> CNTT K23G <strong>Ngày báo cáo:</strong> 06/10/2026</p>
+<hr></section><section class="page"><h1>MỤC LỤC</h1>
+<ol>
+<li>Tóm tắt và mục tiêu</li>
+<li>Phạm vi và checkpoint</li>
+<li>Kiến trúc tổng thể</li>
+<li>Công nghệ và dịch vụ</li>
+<li>Docker Compose và network</li>
+<li>PostgreSQL, pgAdmin và quyền</li>
+<li>Authentication, session và nghiệp vụ</li>
+<li>Nginx, HTTPS và bảo mật web</li>
+<li>Monitoring — Container</li>
+<li>Monitoring — Web</li>
+<li>Monitoring — Database</li>
+<li>Logging — Loki, Promtail và LogQL</li>
+<li>Hardening H1–H6</li>
+<li>Kiểm thử và kết quả</li>
+<li>Evidence register</li>
+<li>Git history, limitations và kết luận</li>
+</ol>
+<hr></section><section class="page"><h1>1. Tóm tắt và mục tiêu</h1>
+<p>Đề 18 yêu cầu xây dựng website tạo và quản lý khách hàng, hóa đơn và thanh toán; dữ liệu nằm trong PostgreSQL, pgAdmin dùng để kiểm tra dữ liệu. Các yêu cầu hạ tầng gồm Docker Compose, Nginx reverse proxy, HTTPS, Prometheus/Grafana, Loki/LogQL và hardening.</p>
+<p>Hệ thống hiện gồm ứng dụng Node.js 24/Express, PostgreSQL 16, pgAdmin, Nginx unprivileged, sáu Prometheus scrape targets, Grafana, Loki và Promtail. Các checkpoint CP0–CP6 đã PASS; YC1 final/CP-Final được xác minh trong Prompt 8. YC7 hoàn thiện báo cáo, kịch bản demo diễn tập thực tế, Q&amp;A và giải phóng toàn bộ blocker hành chính/GitHub. Commit 6/tag <code>v1.0</code> được tạo sau khi toàn bộ final release gates đạt PASS.</p>
+<p>Mục tiêu của báo cáo là mô tả đúng phiên bản đang chạy và lịch sử Git bất biến, giải thích luồng nghiệp vụ và ranh giới bảo mật, đồng thời dẫn người đọc tới bằng chứng runtime đã capture. Báo cáo không biến CP4 technical PASS thành tuyên bố hoàn tất toàn bộ evidence: các ảnh Grafana RQ4-02/03/04 được ghi nhận riêng; RQ4-07 không thay thế chúng.</p>
+<p>Phạm vi không bao gồm cloud deployment, hệ thống hóa đơn điện tử, chuyển Promtail sang Alloy, hoặc các biện pháp hardening ngoài H1–H6 chưa có bằng chứng. PostgreSQL, session store, metrics và log được triển khai bằng các thành phần trong repository, không phải mock services.</p>
+<hr></section><section class="page"><h1>2. Phạm vi và checkpoint</h1>
+<table><thead><tr><th>Mốc</th><th>Trạng thái</th><th>Bằng chứng chính</th></tr></thead><tbody>
+<tr><td>CP0 — Preflight</td><td>PASS</td><td>Docker/Compose, pinned images, OpenSSL, network probes, cAdvisor, Loki/Grafana/pgAdmin compatibility</td></tr>
+<tr><td>CP1a — Repository foundation</td><td>PASS</td><td>Git history và <code>.env.example</code> placeholder-only</td></tr>
+<tr><td>CP2 — Web, PostgreSQL, pgAdmin</td><td>PASS</td><td><code>npm run test:cp2</code>, runtime pgAdmin DB connection</td></tr>
+<tr><td>CP3 — Nginx/HTTPS</td><td>PASS</td><td>HTTPS, redirect, headers/CSP, rate limit, JSON access logs</td></tr>
+<tr><td>CP4 — Monitoring</td><td>Technical PASS</td><td>Prometheus targets 6/6; Grafana Container/Web/Database rows are captured in this report cycle</td></tr>
+<tr><td>CP5 — Logging</td><td>PASS</td><td>Loki/Promtail, Q2/Q3/Q4, persistence</td></tr>
+<tr><td>CP6 — Hardening</td><td>PASS</td><td>H1–H6 verifiers and RQ6-01…06</td></tr>
+<tr><td>YC1 final / CP-Final</td><td>PASS</td><td>README, docs-final, clean-clone gate</td></tr>
+<tr><td>YC7 / CP7</td><td>Final Release</td><td>This report, demo rehearsal record, Q&amp;A, full evidence suite and final release gates</td></tr>
+</tbody></table>
+<p>CP7 evidence is point-in-time. Prometheus values, log counts, timings, and dashboard curves change as traffic and time windows change. The report identifies recorded windows rather than treating one screenshot as a permanent metric value. Official university, faculty and course metadata were officially confirmed: Trường Đại học Công nghệ Thông tin và Truyền thông (ICTU), Khoa Công nghệ thông tin, Môn học: Triển Khai và Quản Trị Hệ Thống Phần Mềm. Remote GitHub repository <code>nguyenthinga27052006-cpu/Billing_One</code> has been synchronized with milestone commits and tags, and remote evidence screenshots RQ1-01…RQ1-04 have been captured. Demo rehearsal was executed and verified in 7.07s automated runtime with 7–9 minutes presentation pacing (≤ 10 minutes target achieved).</p>
+<p>The clean-clone test used generated throwaway credentials and a fresh self-signed certificate in an isolated temporary clone with unique volumes and web image. It passed Compose startup, HTTPS/redirect, 15 CP2 smoke groups, pgAdmin registration, monitoring/logging queries and both H1–H6 verifiers. The clone and its temporary secrets/key were removed afterward; the original six named volumes were preserved.</p>
+<hr></section><section class="page"><h1>3. Kiến trúc tổng thể</h1>
+<pre><code>Browser
+  | HTTP :80 (301) / HTTPS :443
+  v
+Nginx unprivileged
+  | app_net
+  v
+Express web :3000 -------- db_net -------- PostgreSQL :5432
+  | /metrics                                  ^       ^
+  |                                            |       |
+  +-------------- monitoring_net         pgAdmin   postgres-exporter
+                                               |
+Prometheus &lt;--- cAdvisor / node-exporter / nginx-exporter / web / postgres-exporter
+    |                         |
+    v                         v
+ Grafana                 Loki &lt;--- Promtail &lt;--- Docker JSON logs</code></pre>
+<p>Người dùng chỉ truy cập ứng dụng qua Nginx. Nginx chuyển HTTP sang HTTPS và proxy request tới <code>web</code>; service web và PostgreSQL không publish host ports. pgAdmin, Prometheus và Grafana bind loopback. Prometheus scrape exporters/app metrics; Grafana hiển thị Container, Web, Database và truy vấn Loki.</p>
+<p>Các hệ thống ngoài kiến trúc gồm Docker Desktop Linux VM, nơi cAdvisor/node-exporter lấy số liệu container/host VM. Những số liệu này không đại diện cho Windows host. Certificate là self-signed dành cho localhost/demo; trình duyệt có thể cảnh báo chứng chỉ.</p>
+<p>Mã nguồn frontend là HTML/CSS/JavaScript thuần, được Express static phục vụ. Backend API dùng JSON, validation phía server, truy vấn PostgreSQL parameterized và lỗi trả JSON thống nhất. Không có frontend build container riêng; <code>web</code> là project-built image từ Node base image.</p>
+<hr></section><section class="page"><h1>4. Công nghệ và dịch vụ</h1>
+<table><thead><tr><th>Thành phần</th><th>Phiên bản/image</th><th>Vai trò</th></tr></thead><tbody>
+<tr><td>Node.js</td><td>24.21.0 Alpine base</td><td>Runtime/build base của web</td></tr>
+<tr><td>Express</td><td>5.x</td><td>HTTP/API/static frontend</td></tr>
+<tr><td>PostgreSQL</td><td>16.15-trixie</td><td>Database nghiệp vụ và session</td></tr>
+<tr><td>pgAdmin</td><td>9.18.0</td><td>DB administration UI</td></tr>
+<tr><td>Nginx unprivileged</td><td>1.30.5-alpine</td><td>Reverse proxy, TLS, headers, rate limit</td></tr>
+<tr><td>Prometheus</td><td>3.15.0</td><td>Scrape và lưu metrics</td></tr>
+<tr><td>Grafana</td><td>13.2.3</td><td>Dashboard/Explore</td></tr>
+<tr><td>cAdvisor</td><td>0.60.6</td><td>Container CPU/RAM metrics</td></tr>
+<tr><td>node-exporter</td><td>1.12.1</td><td>Linux VM/host metrics</td></tr>
+<tr><td>nginx-prometheus-exporter</td><td>1.5.3</td><td>Nginx <code>stub_status</code> metrics</td></tr>
+<tr><td>postgres-exporter</td><td>0.20.1</td><td>PostgreSQL metrics</td></tr>
+<tr><td>Loki</td><td>3.7.8</td><td>Log store/query API</td></tr>
+<tr><td>Promtail</td><td>3.6.11</td><td>Docker log discovery and push</td></tr>
+</tbody></table>
+<p>Image policy giữ <strong>12 upstream/base images</strong>. <code>node:24.21.0-alpine</code> là base image; Compose build project-specific <code>web</code>, không phải upstream image thứ 13. Không dùng tag <code>latest</code>. Một file <code>docker-compose.yml</code> định danh project <code>billing</code> điều phối 12 services.</p>
+<p>Promtail được giữ vì đề yêu cầu tên sản phẩm Loki + Promtail. Promtail EOL từ 02/03/2026; hệ thống mới nên đánh giá Grafana Alloy, nhưng không đổi agent trong bài này. cAdvisor chạy privileged và Promtail có Docker socket mount; đây là ngoại lệ được công khai, không che giấu.</p>
+<hr></section><section class="page"><h1>5. Docker Compose và network</h1>
+<table><thead><tr><th>Network</th><th>Internal</th><th>Thành viên chính</th><th>Mục đích</th></tr></thead><tbody>
+<tr><td><code>edge_net</code></td><td>false</td><td>Nginx</td><td>Public HTTP/HTTPS ingress</td></tr>
+<tr><td><code>admin_net</code></td><td>false</td><td>pgAdmin, Prometheus, Grafana</td><td>Công cụ admin loopback-published</td></tr>
+<tr><td><code>app_net</code></td><td>true</td><td>Nginx, web, nginx-exporter</td><td>Proxy và Nginx metrics</td></tr>
+<tr><td><code>db_net</code></td><td>true</td><td>web, PostgreSQL, pgAdmin, postgres-exporter</td><td>DB access</td></tr>
+<tr><td><code>monitoring_net</code></td><td>true</td><td>Prometheus, Grafana, Loki, Promtail, exporters, cAdvisor, web</td><td>Metrics/log internal traffic</td></tr>
+</tbody></table>
+<p>PostgreSQL không thuộc <code>edge_net</code> hoặc <code>admin_net</code>; Nginx không thuộc <code>db_net</code>. <code>admin_net</code> là mạng non-internal cho các công cụ cần bind localhost, không phải primary security boundary. <code>internal: true</code> được mô tả như network configuration; không tự suy diễn egress behavior nếu chưa có TCP test.</p>
+<p>Host bindings quan sát được: Nginx <code>0.0.0.0:80/443</code>; pgAdmin <code>127.0.0.1:5050</code>; Grafana <code>127.0.0.1:3000</code>; Prometheus <code>127.0.0.1:9090</code>. Web, PostgreSQL, Loki, cAdvisor và exporters không publish host ports. Docker Compose config và service state được kiểm tra trong CP7.</p>
+<p>Named volumes bảo vệ PostgreSQL, pgAdmin, Prometheus, Grafana, Loki và Promtail positions. <code>docker compose down</code> giữ volumes; <code>docker compose down -v</code> xóa dữ liệu và chỉ dùng khi chủ động reset. Init scripts chạy khi PostgreSQL volume trống lần đầu.</p>
+<hr></section><section class="page"><h1>6. PostgreSQL, pgAdmin và quyền</h1>
+<p>Schema gồm <code>users</code>, <code>customers</code>, <code>invoices</code>, <code>invoice_items</code>, <code>payments</code> và bảng kỹ thuật <code>user_sessions</code>. Tiền dùng PostgreSQL <code>NUMERIC</code>, không dùng floating-point để cộng tiền ở Node. Invoice issue/payment chạy trong transaction; payment đọc/khóa dòng invoice với <code>SELECT ... FOR UPDATE</code> để hai request đồng thời không thể thanh toán vượt dư nợ.</p>
+<p>Role <code>postgres</code> dành cho init/bảo trì. <code>billing_app</code> có quyền nghiệp vụ cần thiết nhưng không có DDL và không thể UPDATE/DELETE <code>payments</code>. <code>billing_readonly</code> chỉ SELECT các bảng nghiệp vụ, không đọc bảng auth <code>users</code>. Role <code>exporter</code> là member <code>pg_monitor</code> để scrape metrics. CP6 negative tests xác minh thao tác trái quyền bị từ chối.</p>
+<p>pgAdmin tự nhập server <code>Billing PostgreSQL</code> từ <code>pgadmin/servers.json</code> với host <code>postgres</code>, port nội bộ 5432, database <code>billing</code>, user <code>billing_readonly</code>. JSON không chứa mật khẩu. Người vận hành nhập credential lúc kết nối và để Save Password bỏ chọn. Runtime UI, ping, server registration và DB connection đã được xác minh; RQ2-07 là ảnh kết nối runtime.</p>
+<p>Password trong <code>.env</code> chỉ dùng cho local runtime. Thay giá trị sau khi named volume đã khởi tạo không chạy lại init scripts; đổi role bằng quy trình DB được kiểm soát hoặc reset volume chỉ khi chấp nhận mất dữ liệu demo.</p>
+<hr></section><section class="page"><h1>7. Authentication, session và nghiệp vụ</h1>
+<p>Auth dùng <code>express-session</code> với <code>connect-pg-simple</code>, lưu session trong PostgreSQL table <code>user_sessions</code>. Password hashes tạo bằng bcrypt cost 12 và được kiểm tra bằng <code>bcryptjs</code>. Không dùng JWT. Express cấu hình <code>trust proxy = 1</code>; Nginx gửi <code>X-Forwarded-Proto=https</code>.</p>
+<p>Cookie <code>billing.sid</code> có <code>HttpOnly</code>, <code>SameSite=Strict</code>, <code>Path=/</code>, thời hạn 8 giờ. <code>Secure</code> bật đúng khi <code>SESSION_COOKIE_SECURE=true</code>. Ở YC2, test HTTP localhost:8000 dùng false; từ Commit 1, web không publish trực tiếp và chỉ đi qua HTTPS Nginx với true. Sai login trả 401 generic; login thành công regenerate session; logout hủy session và trả 204.</p>
+<p>Invoice number được tạo khi issue theo <code>INV-YYYY-NNNNNN</code>, unique và tăng theo PostgreSQL sequence <code>invoice_no_seq</code>. Sequence không reset theo năm; số có thể có gaps khi transaction lỗi sau khi lấy sequence. Draft cần ít nhất một item và total dương để issue. Sau issue invoice không sửa. Payment phải dương, không vượt dư nợ; trạng thái chuyển <code>ISSUED → PARTIALLY_PAID → PAID</code>. Chỉ admin hủy unpaid invoice với reason; staff không hủy. Customer có invoice không xóa được.</p>
+<hr></section><section class="page"><h1>8. Nginx, HTTPS và bảo mật web</h1>
+<p>Nginx unprivileged là public entrypoint. HTTP port 80 chỉ cho health endpoint nội bộ và redirect request bình thường <code>301</code> sang HTTPS port 443. TLS hỗ trợ 1.2/1.3; certificate self-signed SAN <code>localhost</code> và <code>billing.local</code> được tạo bằng <code>scripts/gen-cert.ps1</code> hoặc <code>scripts/gen-cert.sh</code>. Private key nằm trong ignored <code>nginx/certs/</code>, không được commit.</p>
+<p>Nginx proxy tới <code>web:3000</code>, đặt Host, <code>X-Real-IP</code>, <code>X-Forwarded-For</code>, <code>X-Forwarded-Proto</code>, và request ID. Security headers gồm HSTS, nosniff, DENY, Referrer-Policy, Permissions-Policy và CSP; <code>server_tokens off</code> ẩn version. Login limit tạo HTTP 429 khi vượt ngưỡng. Access logs là JSON ra stdout/stderr; password, cookie và session secret không được ghi log.</p>
+<p>Public HTTPS chặn <code>/health</code>, <code>/metrics</code> và <code>stub_status</code>; các endpoint chỉ dành cho nội bộ/scraper. Health test sau clean clone: HTTPS <code>/</code> 200, HTTP <code>/</code> 301 tới HTTPS, unauthenticated protected API 401, public <code>/health</code>/<code>metrics</code> 404. Cert tự ký phù hợp demo; không được coi là chứng chỉ production.</p>
+<hr></section><section class="page"><h1>9. Monitoring — Container</h1>
+<p>Prometheus scrape 6 jobs: <code>prometheus</code>, <code>cadvisor</code>, <code>node</code>, <code>nginx</code>, <code>web</code>, <code>postgres</code>. Runtime verification của CP7 cho kết quả <strong>6/6 UP</strong>. cAdvisor và node-exporter thu số liệu từ Docker Desktop Linux VM; không trình bày chúng như Windows host metrics. CPU/RAM dashboard lọc label Compose project <code>billing</code> để loại dự án Docker khác.</p>
+<p>Grafana dashboard <code>Billing Monitoring</code> is provisioned from JSON with Container, Web, Database and Logs rows. Row Container gồm CPU usage theo container và memory working set. Ảnh bên dưới là capture trực tiếp từ Grafana, time range Last 30 minutes; chuỗi thời gian thay đổi theo workload.</p>
+<figure><img src="../evidence/RQ4-02-grafana-container-row.png" alt="Grafana Container row: CPU and memory"><figcaption>Grafana Container row: CPU and memory</figcaption></figure>
+<p><strong>Quan sát:</strong> dashboard phân biệt từng service Billing và cho thấy CPU/RAM thay đổi theo thời gian; đây là series thật từ Prometheus, không phải ảnh minh họa.</p>
+<hr></section><section class="page"><h1>10. Monitoring — Web</h1>
+<p>Row Web tổng hợp app request rate/status, request latency p95, Nginx connections và business metrics. App metrics từ <code>prom-client</code>: <code>http_requests_total</code>, <code>http_request_duration_seconds</code>, <code>billing_invoices_created_total</code>, <code>billing_payments_amount_vnd_total</code>, cùng Node/process metrics. Route labels là route templates, không gắn ID cá nhân.</p>
+<p>Ảnh dưới ghi lại các panel Web trong cùng time range. Tại thời điểm chụp có series cho route/status; latency p95 và Nginx active connections có sample. Business counter <code>increase()</code> phụ thuộc hoạt động trong time window, nên không kết luận counter dương nếu chart không cho thấy giá trị đó.</p>
+<figure><img src="../evidence/RQ4-03-grafana-web-row.png" alt="Grafana Web row: requests, status, latency, Nginx and business metrics"><figcaption>Grafana Web row: requests, status, latency, Nginx and business metrics</figcaption></figure>
+<p>Metrics được scrape nội bộ qua <code>web:3000/metrics</code>; Nginx public trả 404 cho endpoint này. nginx-exporter lấy số liệu từ <code>stub_status</code> trên <code>app_net</code>, không publish cổng status ra host.</p>
+<hr></section><section class="page"><h1>11. Monitoring — Database</h1>
+<p>Postgres exporter dùng role <code>exporter</code>/<code>pg_monitor</code>, không dùng superuser. Dashboard thể hiện <code>pg_up</code>, active connections, transactions/sec, database size và cache hit ratio. Các series lấy từ database <code>billing</code> qua network nội bộ.</p>
+<p>Ảnh dưới là Grafana Database row đã capture. Tại ảnh chụp, PostgreSQL up stat là <code>1</code>, active connection series hiện diện, transaction series có mẫu; kích thước DB và cache hit ratio có thời gian tương ứng. Số liệu là một snapshot runtime và có thể thay đổi khi DB nhận traffic.</p>
+<figure><img src="../evidence/RQ4-04-grafana-database-row.png" alt="Grafana Database row: PostgreSQL availability, connections, transactions, size and cache"><figcaption>Grafana Database row: PostgreSQL availability, connections, transactions, size and cache</figcaption></figure>
+<p>CP4 technical gate xác minh targets, datasource, dashboard provisioning và metrics. RQ4-02/03/04 là ba ảnh row riêng; RQ4-07 vẫn là Prometheus business metric screenshot độc lập, không thay thế các row này.</p>
+<hr></section><section class="page"><h1>12. Logging — Loki, Promtail và LogQL</h1>
+<p>Docker JSON logs được discovery qua Promtail; relabeling giữ <code>service</code>, <code>container</code>, <code>stream</code> và lọc log thuộc Compose project <code>billing</code>. Loki dùng TSDB/filesystem, retention 72h. Grafana provision datasource Loki. Không dùng <code>path</code>, <code>status</code>, <code>user</code> hoặc <code>request_id</code> làm index labels vì cardinality; các field được parse khi query bằng <code>| json</code>.</p>
+<table><thead><tr><th>Query</th><th>LogQL</th><th>Ý nghĩa</th></tr></thead><tbody>
+<tr><td>Q2</td><td><code>{service=&quot;web&quot;} | json | msg=&quot;auth.login_failed&quot;</code></td><td>Failed login event</td></tr>
+<tr><td>Q3</td><td><code>{service=&quot;nginx&quot;} | json | status &gt;= 400</code></td><td>Nginx 4xx/5xx</td></tr>
+<tr><td>Q4</td><td><code>{service=&quot;web&quot;} | json | msg=~&quot;invoice.created|payment.recorded&quot;</code></td><td>Invoice/payment events</td></tr>
+</tbody></table>
+<p>CP5 historical evidence recorded Q2=7, Q3=41, Q4=21 lines in its checked one-hour window. Clean-clone verification later returned real results Q2=1, Q3=21, Q4=9 within its checked hour. Counts vary with query range and traffic; neither set is treated as a fixed service-level metric.</p>
+<p>Loki <code>/ready</code> may briefly return 503 during ingester warmup (observed message: waiting 15 seconds after ready). Recheck; the runtime subsequently returned <code>200 ready</code>, and queries succeeded. Promtail is EOL as of 2026-03-02; retained because the assignment explicitly asks for Promtail. Migration to Alloy is a future maintenance decision, not part of this implementation.</p>
+<hr></section><section class="page"><h1>13. Hardening H1–H6</h1>
+<table><thead><tr><th>Control</th><th>Runtime proof</th><th>Result</th></tr></thead><tbody>
+<tr><td>H1 — Non-root</td><td>Web UID 1000, PostgreSQL process UID 999, Nginx 101, Grafana 472, Prometheus 65534, Loki 10001; documented cAdvisor exception</td><td>PASS</td></tr>
+<tr><td>H2 — Network isolation</td><td>Five network flags/membership; PostgreSQL only on <code>db_net</code>, Nginx not on <code>db_net</code>; internal ports not published</td><td>PASS</td></tr>
+<tr><td>H3 — Secret hygiene</td><td><code>.env</code> not tracked, <code>.env.example</code> tracked, Grafana default admin/admin rejected</td><td>PASS</td></tr>
+<tr><td>H4 — DB least privilege</td><td><code>billing_app</code> DDL and payment UPDATE/DELETE denied; readonly DML/auth-table access denied; exporter in <code>pg_monitor</code></td><td>PASS</td></tr>
+<tr><td>H5 — TLS/headers</td><td>TLS 1.2/1.3, six security headers, Nginx version hidden</td><td>PASS</td></tr>
+<tr><td>H6 — Port exposure</td><td>Only Nginx public; admin tools loopback; app/DB/Loki/exporters/cAdvisor internal</td><td>PASS</td></tr>
+</tbody></table>
+<p>Both <code>scripts/verify-hardening.ps1</code> and Windows Git Bash <code>scripts/verify-hardening.sh</code> passed H1–H6 with exit 0. H6 grep uses <code>grep -- &#x27;-&gt;&#x27;</code> so the pattern is not parsed as an option. <code>.gitattributes</code> pins the five tracked shell scripts to LF; this is needed because Windows <code>core.autocrlf=true</code> otherwise converts DB init here-documents to CRLF in a fresh clone.</p>
+<figure><img src="../evidence/RQ6-06-verify-hardening.png" alt="Automated H1-H6 verifier evidence"><figcaption>Automated H1-H6 verifier evidence</figcaption></figure>
+<hr></section><section class="page"><h1>14. Kiểm thử và kết quả</h1>
+<table><thead><tr><th>Kiểm tra</th><th>Kết quả được xác minh</th></tr></thead><tbody>
+<tr><td>Clean-clone Compose</td><td><code>docker compose config --quiet</code> PASS; <code>docker compose up -d</code> started 12 services with declared healthchecks healthy</td></tr>
+<tr><td>HTTP/HTTPS</td><td>HTTP 301 → HTTPS; public HTTPS 200</td></tr>
+<tr><td>Auth boundaries</td><td>Protected API without session 401; public health/metrics 404</td></tr>
+<tr><td>Business regression</td><td><code>npm run test:cp2 --prefix app</code> PASS, 15 groups in both runs; invoice-list p95 27.15 ms in clean clone and 23.02 ms on current stack</td></tr>
+<tr><td>pgAdmin</td><td><code>/misc/ping</code> 200; login UI 200; imported <code>Billing PostgreSQL</code> registered</td></tr>
+<tr><td>Prometheus/Grafana</td><td>6/6 targets UP; Grafana API health <code>ok</code>; datasource Prometheus/Loki health <code>OK</code></td></tr>
+<tr><td>Loki/LogQL</td><td>Ready recovered to 200; Q2/Q3/Q4 returned real lines</td></tr>
+<tr><td>Hardening</td><td>Both PowerShell and Git Bash H1–H6 verifiers PASS</td></tr>
+</tbody></table>
+<p>CP2 coverage includes auth/session, customers, invoice drafts/issue, payment partial/full, cancellation/role rules, validation and error handling, concurrency guard, dashboard, logout, and p95 listing. The smoke suite creates isolated test customers/invoices/payments in the test DB; it was run in the temporary clean clone with generated credentials, not against the original user volume. Original data volumes were preserved when restoring the original stack.</p>
+<hr></section><section class="page"><h1>15. Evidence register</h1>
+<table><thead><tr><th>Evidence IDs</th><th>Nội dung</th><th>Tình trạng</th></tr></thead><tbody>
+<tr><td>RQ1-01…04</td><td>GitHub repository, commit list, commit detail, rendered README</td><td>Captured</td></tr>
+<tr><td>RQ2-07</td><td>pgAdmin runtime database connection</td><td>Captured</td></tr>
+<tr><td>RQ3-01/02</td><td>HTTPS browser and runtime verification</td><td>Captured</td></tr>
+<tr><td>RQ4-01</td><td>Prometheus targets</td><td>Captured</td></tr>
+<tr><td>RQ4-02/03/04</td><td>Grafana Container/Web/Database rows</td><td>Captured</td></tr>
+<tr><td>RQ4-07</td><td>Prometheus business metric</td><td>Captured; separate from RQ4-02/03/04</td></tr>
+<tr><td>RQ5-01…05</td><td>Loki readiness/labels/Q2/Q3/Q4</td><td>Captured</td></tr>
+<tr><td>RQ5-06</td><td>Dashboard log panel</td><td>Optional; captured</td></tr>
+<tr><td>RQ6-01…06</td><td>H1–H6 hardening evidence</td><td>Captured</td></tr>
+</tbody></table>
+<p>Evidence filenames and descriptions are maintained in <code>docs/evidence/README.md</code>. Screenshot evidence is read-only; no dashboard query, retention or configuration was changed to create these captures. Q2/Q3/Q4 screenshot counts and current query counts refer to their recorded windows.</p>
+<hr></section><section class="page"><h1>16. Git history, limitations và kết luận</h1>
+<table><thead><tr><th>Milestone</th><th>Tag</th><th>Commit</th></tr></thead><tbody>
+<tr><td>Base application</td><td><code>base-app</code></td><td><code>aa0d39222eddec12c41e7379550952ee83085a5e</code></td></tr>
+<tr><td>Commit 1 — Nginx</td><td><code>commit-1-nginx</code></td><td><code>d179090de811925ee6b505311edb5c956fea4b98</code></td></tr>
+<tr><td>Commit 2 — Monitoring</td><td><code>commit-2-monitoring</code></td><td><code>7502aa7f067f99f6b976bc553bdc021b79561f48</code></td></tr>
+<tr><td>Support after Commit 2</td><td>—</td><td><code>5743031f9c39a3960a87d40e92cb7eef5d9e40eb</code></td></tr>
+<tr><td>Docs reconciliation</td><td>—</td><td><code>25944eae9dd7546c31c2083f1e3b0400d43919f8</code></td></tr>
+<tr><td>Commit 3 — Logging</td><td><code>commit-3-logging</code></td><td><code>3ff709cee127ce763ee45fa7477e3b8372d8318a</code></td></tr>
+<tr><td>Docs support before Commit 4</td><td>—</td><td><code>32555a660f874624c20817e34cab9e37f1b26859</code></td></tr>
+<tr><td>Commit 4 — H1–H6 hardening</td><td><code>hardening</code></td><td><code>94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48</code></td></tr>
+<tr><td>Commit 5 — YC1 final docs</td><td><code>docs-final</code></td><td><code>2141b24f7cab17e57118aea39aaadd7c3dffef59</code></td></tr>
+<tr><td>Commit 6 — YC7 report/demo</td><td><code>v1.0</code></td><td>Target final release milestone commit</td></tr>
+</tbody></table>
+<p><strong>Limitations:</strong> self-signed TLS is for demo; cAdvisor/node-exporter observe Docker Desktop Linux VM; Promtail is EOL and has Docker socket access; cAdvisor is privileged; invoice sequence allows gaps and does not reset annually; <code>.env</code> password changes do not alter an initialized DB volume. WSL Docker CLI is unavailable in this environment, while Windows Git Bash and Docker Desktop were used for verification.</p>
+<p><strong>Conclusion:</strong> The delivered system provides a complete billing workflow, database persistence, secure Nginx reverse proxy entry, Prometheus/Grafana metrics, Loki/Promtail centralized logs, verified H1–H6 security controls, synchronized GitHub remote repository (<code>nguyenthinga27052006-cpu/Billing_One</code>), and full evidence suite. All CP0–CP7 requirements have been rigorously satisfied and verified.</p></section></body></html>

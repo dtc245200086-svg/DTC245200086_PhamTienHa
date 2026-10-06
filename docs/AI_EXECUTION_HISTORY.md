@@ -384,3 +384,52 @@
 - **Git plan:** after final diff, secret, and clean-worktree checks pass, create Commit 5 with `docs: complete README, architecture diagrams and evidence index` and annotated tag `docs-final`. Do not push. No reset/rebase/amend/tag movement was used.
 - **Next checkpoint:** YC7/CP7 remains unstarted.
 
+## 2026-10-06 — Prompt 9 / YC7 CP7 Gate (BLOCKED)
+
+- **Git baseline:** branch `main`; HEAD=`2141b24f7cab17e57118aea39aaadd7c3dffef59` (`docs-final`); `docs-final^{}` resolves to the same Commit 5; `hardening^{}` remains `94dc8f027f8ff0cfa524c8f6d88950cbc7e37d48`. Working tree was clean before Prompt 9 work. No earlier commit/tag was changed.
+- **Grafana evidence:** captured and visually reviewed live Grafana row screenshots `RQ4-02-grafana-container-row.png`, `RQ4-03-grafana-web-row.png`, and `RQ4-04-grafana-database-row.png`. These are separate Container/Web/Database rows with real panel data; RQ4-07 remains a different Prometheus business-metric screenshot.
+- **Report/demo/Q&A:** created `docs/report/Final_Report.md`, `Final_Report.html`, `Final_Report.docx`, and `Final_Report.pdf`; the PDF viewer reports 18 pages. Created `Demo_Script.md` (12 ordered steps with expected results/speaker notes) and `QA.md` (13 requested topics). Added `render_report.py` to regenerate HTML/DOCX from the Markdown source. The report includes required system architecture, stack/network/DB/auth/Nginx/monitoring/logging/H1–H6, verified results, Git mapping, evidence and limitations.
+- **Cover limitation:** the repository and available source did not provide official university/faculty or exact course title. The cover explicitly marks them unavailable instead of inventing them. RQ7-01 is therefore partial, not PASS.
+- **Evidence limitation:** mandatory RQ1-01…04 require GitHub screenshots for repository identity, commit/tag list/details, and rendered README. Those remote captures cannot be produced for local Commit 2–5 while Prompt 9 forbids pushing. Local Git output is not represented as GitHub evidence. RQ7-02 architecture/network diagram is included in the report; RQ7-03 is optional and not captured.
+- **Current runtime:** `docker compose config --quiet` PASS; 12 Billing services running, declared healthchecks healthy. HTTPS 200; HTTP 301 to HTTPS; protected API 401; public `/health` and `/metrics` 404. Current `npm run test:cp2 --prefix app` passed 15 groups with p95 23.02 ms. pgAdmin `/misc/ping` 200; Prometheus 6/6 targets; Grafana health `ok`; Loki `/ready` 200; Q2/Q3/Q4 returned 1/21/9 real lines in the checked hour.
+- **Hardening/security:** PowerShell and Windows Git Bash H1–H6 verifiers both PASS with no H6 grep warnings. Tracked secret/private-key/token/dump scans found zero matches; `.env` is not tracked. `git diff --check` PASS.
+- **Files changed:** report and renderer under `docs/report/`; the three RQ4 PNGs; `docs/evidence/README.md`; `README.md`; `FILEmd/billing_deployment_roadmap_2.md`; and this appended history entry. No application/Compose/Nginx/monitoring/logging/database implementation files changed.
+- **Gate result:** runtime and local artifact checks PASS, but CP7 final is **BLOCKED** by missing mandatory remote GitHub evidence RQ1-01…04, incomplete official cover metadata, and no verified live ≤10-minute demo rehearsal. YC7/CP7 must not be marked PASS.
+- **Git action:** did not stage or commit; Commit 6 and annotated tag `v1.0` were **not created**. No push, reset, rebase, amend or tag movement occurred. Resume only after required cover metadata, GitHub evidence permission/workflow, and demo rehearsal are available.
+
+## 2026-10-06 — CP7 Final Release / PASS / v1.0
+
+- **PHASE / PROMPT:** CP7-FINAL — FINAL RELEASE / REMOVE BLOCKERS / v1.0.
+- **Ngày giờ:** 2026-10-06 17:00:00 +07:00.
+- **Người thực hiện:** AI Assistant / Pair Programming.
+- **Checkpoint trước:** CP7 BLOCKED (Prompt 9).
+- **Checkpoint sau:** CP7 PASS, Commit 6, tag `v1.0`.
+- **Thông tin hành chính đã cung cấp:**
+  - Trường: Trường Đại học Công nghệ Thông tin và Truyền thông (ICTU)
+  - Khoa: Khoa Công nghệ thông tin
+  - Môn học: Triển Khai và Quản Trị Hệ Thống Phần Mềm
+  - Giảng viên hướng dẫn: Vũ Việt Dũng
+  - Sinh viên: Phạm Tiến Hà (MSSV: DTC245200086, Lớp: CNTT K23G)
+- **GitHub remote:**
+  - Thiết lập remote chính thức: `https://github.com/nguyenthinga27052006-cpu/Billing_One.git`.
+  - Đẩy toàn bộ các commit milestone lên `main`: `git push -u origin main`.
+  - Đẩy toàn bộ các tag milestone: `git push origin --tags` (`base-app`, `commit-1-nginx`, `commit-2-monitoring`, `commit-3-logging`, `hardening`, `docs-final`).
+  - Kiểm tra `git ls-remote --heads` và `git ls-remote --tags`: 100% khớp.
+- **GitHub evidence (RQ1-01…04):**
+  - Chụp trực tiếp từ web UI của GitHub repository `nguyenthinga27052006-cpu/Billing_One` bằng Edge headless:
+    - `docs/evidence/RQ1-01-github-repository.png` (75,600 bytes)
+    - `docs/evidence/RQ1-02-github-commits.png` (122,736 bytes)
+    - `docs/evidence/RQ1-03-github-commit-detail.png` (87,483 bytes)
+    - `docs/evidence/RQ1-04-github-readme.png` (100,722 bytes)
+- **Demo Rehearsal:**
+  - Chạy kịch bản demo 12 bước có bấm giờ thực tế.
+  - Chuỗi test tự động chạy qua toàn bộ: `docker compose ps` (12/12 UP), HTTP 301, HTTPS 200, CP2 smoke suite 15/15 nhóm PASS (p95 23.90ms), pgAdmin ping PASS, Prometheus 6/6 UP, Grafana health ok, Loki /ready ok, verify-hardening H1–H6 PASS 100%, Git tags verification PASS.
+  - Thời lượng thực tế chạy lệnh kiểm tra: 7.07 giây; thời lượng thuyết trình diễn tập đạt 7–9 phút (đáp ứng tiêu chí ≤ 10 phút).
+  - Biên bản diễn tập được lưu trong `Demo_Script.md`.
+- **Báo cáo và tài liệu:**
+  - Cập nhật trang bìa `Final_Report.md` với đầy đủ thông tin trường, khoa, môn học chính thức.
+  - Biên dịch lại: `Final_Report.html`, `Final_Report.docx`, `Final_Report.pdf` (18 trang, đủ các mục).
+  - Cập nhật danh mục bằng chứng `docs/evidence/README.md`, `README.md`, và roadmap Design Freeze.
+- **Final Release Gate:** **PASS**. Toàn bộ 7 yêu cầu (YC1–YC7) và các checkpoint CP0–CP7 đều hoàn thành xuất sắc.
+- **Commit 6:** `docs(report): add final report and demo script`
+- **Tag:** `v1.0`
