@@ -3,6 +3,7 @@ const { AppError, asyncRoute } = require('../errors');
 const { parseId, parsePage, requireObject, requireText, requireDecimal } = require('../validation');
 const { requireAuth, requireRole } = require('./auth');
 const { recordAudit } = require('../audit');
+const { PaymentService } = require('../services/paymentService');
 
 const VALID_SEGMENTS = new Set(['Enterprise', 'SME', 'FDI', 'Retail', 'VIP']);
 const SEGMENT_MAP = {
@@ -65,9 +66,9 @@ function customerRouter(pool) {
                 c.contact_person, c.segment, c.status, c.credit_limit::text,
                 c.payment_term_id, t.name AS payment_term_name, t.days AS payment_term_days,
                 coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                          WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0)::numeric(14, 2)::text AS current_debt,
+                          WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0)::numeric(14, 2)::text AS current_debt,
                 (c.credit_limit - coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                                           WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0))::numeric(14, 2)::text AS available_credit,
+                                           WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0))::numeric(14, 2)::text AS available_credit,
                 (SELECT count(*)::text FROM public.invoices WHERE customer_id = c.id) AS invoices_count,
                 c.created_at
          FROM public.customers c
@@ -128,9 +129,9 @@ function customerRouter(pool) {
               c.contact_person, c.segment, c.status, c.credit_limit::text,
               c.payment_term_id, t.name AS payment_term_name, t.days AS payment_term_days,
               coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                        WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0)::numeric(14, 2)::text AS current_debt,
+                        WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0)::numeric(14, 2)::text AS current_debt,
               (c.credit_limit - coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                                         WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0))::numeric(14, 2)::text AS available_credit,
+                                         WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0))::numeric(14, 2)::text AS available_credit,
               c.created_at
        FROM public.customers c
        LEFT JOIN public.payment_terms t ON t.id = c.payment_term_id
@@ -148,9 +149,9 @@ function customerRouter(pool) {
       pool.query(
         `SELECT c.id, c.code, c.name, c.tax_code, c.segment, c.credit_limit::text,
                 coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                          WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0)::numeric(14, 2)::text AS current_debt,
+                          WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0)::numeric(14, 2)::text AS current_debt,
                 (c.credit_limit - coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
-                                           WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0))::numeric(14, 2)::text AS available_credit,
+                                           WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')), 0))::numeric(14, 2)::text AS available_credit,
                 coalesce((SELECT sum(paid_total) FROM public.invoices WHERE customer_id = c.id), 0)::numeric(14, 2)::text AS lifetime_paid
          FROM public.customers c WHERE c.id = $1`,
         [id]
@@ -176,6 +177,13 @@ function customerRouter(pool) {
       recent_invoices: invoicesRes.rows,
       recent_payments: paymentsRes.rows
     });
+  }));
+
+  // GET /api/customers/:id/unapplied-balance
+  router.get('/:id/unapplied-balance', asyncRoute(async (req, res) => {
+    const id = parseId(req.params.id);
+    const balance = await PaymentService.getCustomerUnappliedBalance(pool, id);
+    res.json(balance);
   }));
 
   // PUT /api/customers/:id

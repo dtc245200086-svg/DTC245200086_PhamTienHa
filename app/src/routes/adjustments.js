@@ -247,7 +247,11 @@ function adjustmentsRouter(pool) {
       const updatedInvRes = await client.query(
         `UPDATE public.invoices
          SET adjusted_total = adjusted_total + $2::numeric,
-             status = CASE WHEN paid_total + adjusted_total + $2::numeric >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+             status = CASE 
+               WHEN paid_total + adjusted_total + $2::numeric >= total THEN 'PAID'
+               WHEN status = 'OVERDUE' THEN 'OVERDUE'
+               ELSE 'PARTIALLY_PAID' 
+             END
          WHERE id = $1
          RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text,
                    (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding`,

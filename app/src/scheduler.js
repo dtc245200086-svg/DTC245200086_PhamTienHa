@@ -1,6 +1,7 @@
 const { writeLog } = require('./logger');
 const { inTransaction } = require('./db');
 const { recordAudit } = require('./audit');
+const { PaymentService } = require('./services/paymentService');
 
 /**
  * Safe date calculation that clamps day-of-month to prevent month rollover (e.g. Jan 31 -> Feb 28).
@@ -57,6 +58,7 @@ async function runRecurringCycle(pool) {
       `SELECT r.id, r.code, r.customer_id, r.service_title, r.contract_ref,
               r.frequency, r.amount_per_period::text, r.next_run_date,
               r.completed_cycles, r.total_cycles, r.status, r.auto_sign,
+              r.auto_settle_unapplied,
               c.name AS customer_name
        FROM public.recurring_plans r
        JOIN public.customers c ON c.id = r.customer_id
@@ -69,6 +71,7 @@ async function runRecurringCycle(pool) {
 
     for (const plan of duePlans.rows) {
       try {
+        let createdInvoice = null;
         await inTransaction(async (txClient) => {
           // Re-lock plan row in transaction
           const lockedRes = await txClient.query(
@@ -151,6 +154,13 @@ async function runRecurringCycle(pool) {
             invoice_no: invoiceNo || `DRAFT-${invoiceId}`,
             next_run_date: nextSafeDate
           });
+
+          createdInvoice = {
+            id: invoiceId,
+            invoice_no: invoiceNo,
+            auto_sign: Boolean(plan.auto_sign),
+            auto_settle_unapplied: Boolean(plan.auto_settle_unapplied)
+          };
         });
 
         // Audit outside transaction
@@ -162,6 +172,62 @@ async function runRecurringCycle(pool) {
           severity: 'INFO',
           summary: `Hệ thống tự động phát sinh hóa đơn kỳ cước cho thuê bao ${plan.code} (${plan.customer_name})`
         });
+
+        // Auto-settle unapplied cash if invoice was issued and auto_settle_unapplied is enabled
+        if (createdInvoice && createdInvoice.auto_sign && createdInvoice.auto_settle_unapplied) {
+          const autoAllocKey = `RECURRING-AUTO-ALLOC-INV-${createdInvoice.id}-PLAN-${plan.id}`;
+          try {
+            const allocResult = await inTransaction(async (allocClient) => {
+              return await PaymentService.autoAllocateUnappliedCash(allocClient, {
+                customerId: plan.customer_id,
+                invoiceId: createdInvoice.id,
+                recordedBy: 1, // System User ID
+                idempotencyKey: autoAllocKey,
+                source: 'SCHEDULER'
+              });
+            });
+
+            if (!allocResult.is_idempotent_replay) {
+              await recordAudit(pool, {
+                user: { id: null, username: 'SystemScheduler', role: 'SYSTEM' },
+                module: 'payments',
+                action: 'PAYMENT_AUTO_ALLOCATED',
+                targetRef: allocResult.invoice_no || `INV-${createdInvoice.id}`,
+                severity: 'INFO',
+                summary: `Tự động phân bổ ${allocResult.allocated_total} ₫ từ ${allocResult.allocations_count} khoản tiền thừa cho hóa đơn ${allocResult.invoice_no} (Nguồn: SCHEDULER)`,
+                metadata: {
+                  invoice_id: allocResult.invoice_id,
+                  invoice_no: allocResult.invoice_no,
+                  allocated_total: allocResult.allocated_total,
+                  allocations_count: allocResult.allocations_count,
+                  payment_ids: allocResult.payment_ids,
+                  idempotency_key: autoAllocKey,
+                  invoice_status: allocResult.invoice_status,
+                  settlement_type: allocResult.settlement_type,
+                  allocated_from_unapplied: allocResult.allocated_from_unapplied,
+                  previous_paid_total: allocResult.previous_paid_total,
+                  new_paid_total: allocResult.new_paid_total,
+                  allocations: allocResult.allocations,
+                  remaining_unapplied_cash: allocResult.remaining_unapplied_cash
+                }
+              });
+            }
+          } catch (allocErr) {
+            if (allocErr.code === 'NO_UNAPPLIED_CASH_AVAILABLE') {
+              writeLog('info', 'scheduler.no_unapplied_cash', {
+                plan_id: plan.id,
+                invoice_id: createdInvoice.id,
+                customer_id: plan.customer_id
+              });
+            } else {
+              writeLog('error', 'scheduler.auto_settle_failed', {
+                plan_id: plan.id,
+                invoice_id: createdInvoice.id,
+                error: allocErr.message
+              });
+            }
+          }
+        }
       } catch (err) {
         writeLog('error', 'scheduler.plan_execution_failed', { plan_id: plan.id, error: err.message });
         await pool.query(
@@ -184,6 +250,126 @@ async function runRecurringCycle(pool) {
   }
 }
 
+const OVERDUE_SCAN_LOCK_ID = 88812346;
+
+/**
+ * Scan for open invoices past their due date and transition them to OVERDUE.
+ * Uses dedicated PostgreSQL advisory lock (88812346) and single-invoice row transaction locking.
+ */
+async function runOverdueScan(pool) {
+  const client = await pool.connect();
+  let lockAcquired = false;
+
+  try {
+    const lockRes = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [OVERDUE_SCAN_LOCK_ID]);
+    lockAcquired = lockRes.rows[0]?.acquired;
+    if (!lockAcquired) {
+      writeLog('debug', 'scheduler.overdue_scan_skipped_locked', { lock_id: OVERDUE_SCAN_LOCK_ID });
+      return { skipped: true, reason: 'LOCKED' };
+    }
+
+    // Step 1: Query candidate invoices past due_date that still have outstanding debt
+    const candidatesRes = await client.query(
+      `SELECT id, invoice_no, due_date, total::text, paid_total::text, adjusted_total::text,
+              (CURRENT_DATE - due_date)::int AS days_overdue,
+              (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding_amount
+       FROM public.invoices
+       WHERE status IN ('ISSUED', 'PARTIALLY_PAID')
+         AND due_date < CURRENT_DATE
+         AND (total - paid_total - adjusted_total) > 0
+       ORDER BY id ASC`
+    );
+
+    let processedCount = 0;
+    const flaggedInvoices = [];
+
+    // Step 2: Process each candidate invoice in its own isolated transaction with row-level lock
+    for (const candidate of candidatesRes.rows) {
+      try {
+        await inTransaction(async (txClient) => {
+          // Re-lock the single invoice row for update
+          const lockRowRes = await txClient.query(
+            `SELECT id, invoice_no, due_date, total, paid_total, adjusted_total, status,
+                    (CURRENT_DATE - due_date)::int AS days_overdue,
+                    (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding_amount
+             FROM public.invoices
+             WHERE id = $1
+             FOR UPDATE`,
+            [candidate.id]
+          );
+
+          if (!lockRowRes.rowCount) return;
+          const inv = lockRowRes.rows[0];
+
+          // Re-verify eligibility inside the exclusive row lock
+          if (!['ISSUED', 'PARTIALLY_PAID'].includes(inv.status)) return;
+          const outstandingNum = Number(inv.outstanding_amount);
+          if (outstandingNum <= 0.0001) return;
+          if (inv.days_overdue <= 0) return;
+
+          // Transition invoice status to OVERDUE
+          await txClient.query(
+            `UPDATE public.invoices
+             SET status = 'OVERDUE'
+             WHERE id = $1`,
+            [inv.id]
+          );
+
+          const formattedDueDate = inv.due_date instanceof Date
+            ? inv.due_date.toISOString().slice(0, 10)
+            : String(inv.due_date);
+
+          // Record chained SHA-256 audit entry
+          await recordAudit(txClient, {
+            user: { id: null, username: 'SystemScheduler', role: 'SYSTEM' },
+            ip: '127.0.0.1',
+            module: 'invoices',
+            action: 'INVOICE_OVERDUE_FLAGGED',
+            targetRef: inv.invoice_no,
+            severity: 'WARNING',
+            summary: `Hóa đơn ${inv.invoice_no} quá hạn thanh toán ${inv.days_overdue} ngày, chuyển trạng thái sang OVERDUE`,
+            metadata: {
+              invoice_id: Number(inv.id),
+              invoice_no: inv.invoice_no,
+              due_date: formattedDueDate,
+              days_overdue: Number(inv.days_overdue),
+              outstanding_amount: inv.outstanding_amount,
+              scanned_at: new Date().toISOString()
+            }
+          });
+
+          processedCount++;
+          flaggedInvoices.push({
+            id: Number(inv.id),
+            invoice_no: inv.invoice_no,
+            days_overdue: Number(inv.days_overdue),
+            outstanding_amount: inv.outstanding_amount
+          });
+        });
+      } catch (err) {
+        writeLog('error', 'scheduler.overdue_invoice_failed', {
+          invoice_id: candidate.id,
+          error: err.message
+        });
+      }
+    }
+
+    if (processedCount > 0) {
+      writeLog('info', 'scheduler.overdue_scan_completed', {
+        flagged_count: processedCount,
+        candidates_found: candidatesRes.rowCount
+      });
+    }
+
+    return { processed: processedCount, invoices: flaggedInvoices };
+  } finally {
+    if (lockAcquired) {
+      await client.query('SELECT pg_advisory_unlock($1)', [OVERDUE_SCAN_LOCK_ID]).catch(() => {});
+    }
+    client.release();
+  }
+}
+
 let schedulerTimer = null;
 
 function startScheduler(pool, intervalMs = 60000) {
@@ -192,12 +378,14 @@ function startScheduler(pool, intervalMs = 60000) {
 
   // Initial check after 5 seconds
   setTimeout(() => {
-    runRecurringCycle(pool).catch(err => writeLog('error', 'scheduler.run_error', { error: err.message }));
+    runRecurringCycle(pool).catch(err => writeLog('error', 'scheduler.recurring_error', { error: err.message }));
+    runOverdueScan(pool).catch(err => writeLog('error', 'scheduler.overdue_error', { error: err.message }));
   }, 5000);
 
-  // Periodic recurring check
+  // Periodic check
   schedulerTimer = setInterval(() => {
-    runRecurringCycle(pool).catch(err => writeLog('error', 'scheduler.run_error', { error: err.message }));
+    runRecurringCycle(pool).catch(err => writeLog('error', 'scheduler.recurring_error', { error: err.message }));
+    runOverdueScan(pool).catch(err => writeLog('error', 'scheduler.overdue_error', { error: err.message }));
   }, intervalMs);
 }
 
@@ -213,6 +401,10 @@ module.exports = {
   addMonthsSafe,
   calculateNextSafeDate,
   runRecurringCycle,
+  runOverdueScan,
   startScheduler,
-  stopScheduler
+  stopScheduler,
+  SCHEDULER_LOCK_ID,
+  OVERDUE_SCAN_LOCK_ID
 };
+

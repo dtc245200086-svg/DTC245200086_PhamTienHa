@@ -5,6 +5,7 @@ const { parseId, parsePage, requireDate, requireDecimal, requireObject, requireT
 const { requireAuth, requirePermission } = require('./auth');
 const { recordAudit } = require('../audit');
 const { calculateNextSafeDate } = require('../scheduler');
+const { PaymentService } = require('../services/paymentService');
 
 const FREQUENCIES = new Set(['Hàng tháng', 'Hàng quý', 'Hàng năm', 'MONTHLY', 'QUARTERLY', 'YEARLY']);
 const FREQUENCY_MAP = {
@@ -34,7 +35,7 @@ function recurringRouter(pool) {
                 r.amount_per_period::text, r.amount_per_period::text AS amount,
                 r.next_run_date, r.next_run_date AS next_billing_date,
                 r.completed_cycles, r.completed_cycles AS invoices_generated,
-                r.total_cycles, r.status, r.auto_sign,
+                r.total_cycles, r.status, r.auto_sign, r.auto_settle_unapplied,
                 r.last_error, r.created_at
          FROM public.recurring_plans r
          JOIN public.customers c ON c.id = r.customer_id
@@ -65,7 +66,7 @@ function recurringRouter(pool) {
               r.amount_per_period::text, r.amount_per_period::text AS amount,
               r.next_run_date, r.next_run_date AS next_billing_date,
               r.completed_cycles, r.completed_cycles AS invoices_generated,
-              r.total_cycles, r.status, r.auto_sign,
+              r.total_cycles, r.status, r.auto_sign, r.auto_settle_unapplied,
               r.last_error, r.created_at
        FROM public.recurring_plans r
        JOIN public.customers c ON c.id = r.customer_id
@@ -91,6 +92,7 @@ function recurringRouter(pool) {
     const nextRunDate = requireDate(rawDate, 'next_run_date');
     const totalCycles = req.body.total_cycles ? Number(req.body.total_cycles) : null;
     const autoSign = Boolean(req.body.auto_sign);
+    const autoSettleUnapplied = req.body.auto_settle_unapplied === undefined ? true : Boolean(req.body.auto_settle_unapplied);
 
     if (!FREQUENCIES.has(frequency)) {
       throw new AppError(400, 'INVALID_FREQUENCY', 'frequency must be Hàng tháng, Hàng quý, or Hàng năm.');
@@ -104,11 +106,11 @@ function recurringRouter(pool) {
 
     const result = await pool.query(
       `INSERT INTO public.recurring_plans
-        (code, customer_id, service_title, contract_ref, frequency, amount_per_period, next_run_date, total_cycles, auto_sign, status)
-       VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, 'ACTIVE')
+        (code, customer_id, service_title, contract_ref, frequency, amount_per_period, next_run_date, total_cycles, auto_sign, auto_settle_unapplied, status)
+       VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10, 'ACTIVE')
        RETURNING id, code, customer_id, service_title, contract_ref, frequency,
-                 amount_per_period::text, next_run_date, completed_cycles, total_cycles, status, auto_sign, created_at`,
-      [code, customerId, serviceTitle, contractRef, frequency, amount, nextRunDate, totalCycles, autoSign]
+                 amount_per_period::text, next_run_date, completed_cycles, total_cycles, status, auto_sign, auto_settle_unapplied, created_at`,
+      [code, customerId, serviceTitle, contractRef, frequency, amount, nextRunDate, totalCycles, autoSign, autoSettleUnapplied]
     );
     const plan = result.rows[0];
 
@@ -175,6 +177,7 @@ function recurringRouter(pool) {
         `SELECT r.id, r.code, r.customer_id, r.service_title, r.contract_ref,
                 r.frequency, r.amount_per_period::text, r.next_run_date,
                 r.completed_cycles, r.total_cycles, r.status, r.auto_sign,
+                r.auto_settle_unapplied,
                 c.payment_term_id
          FROM public.recurring_plans r
          JOIN public.customers c ON c.id = r.customer_id
@@ -260,7 +263,10 @@ function recurringRouter(pool) {
         plan_code: plan.code,
         completed_cycles: newCycles,
         next_run_date: nextRunDate,
-        status: nextStatus
+        status: nextStatus,
+        customer_id: plan.customer_id,
+        auto_sign: Boolean(plan.auto_sign),
+        auto_settle_unapplied: Boolean(plan.auto_settle_unapplied)
       };
     });
 
@@ -275,6 +281,51 @@ function recurringRouter(pool) {
       metadata: generated
     });
 
+    let autoSettled = null;
+    if (generated.auto_sign && generated.auto_settle_unapplied) {
+      const autoAllocKey = `RECURRING-AUTO-ALLOC-INV-${generated.invoice_id}-PLAN-${id}`;
+      try {
+        autoSettled = await inTransaction(async (allocClient) => {
+          return await PaymentService.autoAllocateUnappliedCash(allocClient, {
+            customerId: generated.customer_id,
+            invoiceId: generated.invoice_id,
+            recordedBy: req.user.id,
+            idempotencyKey: autoAllocKey,
+            source: 'SCHEDULER'
+          });
+        });
+
+        if (!autoSettled.is_idempotent_replay) {
+          await recordAudit(pool, {
+            user: req.user,
+            ip: req.ip,
+            module: 'payments',
+            action: 'PAYMENT_AUTO_ALLOCATED',
+            targetRef: autoSettled.invoice_no || `INV-${generated.invoice_id}`,
+            severity: 'INFO',
+            summary: `Tự động phân bổ ${autoSettled.allocated_total} ₫ từ ${autoSettled.allocations_count} khoản tiền thừa cho hóa đơn định kỳ ${autoSettled.invoice_no} (Nguồn: MANUAL_RECURRING_TRIGGER)`,
+            metadata: {
+              invoice_id: autoSettled.invoice_id,
+              invoice_no: autoSettled.invoice_no,
+              allocated_total: autoSettled.allocated_total,
+              allocations_count: autoSettled.allocations_count,
+              payment_ids: autoSettled.payment_ids,
+              idempotency_key: autoAllocKey,
+              invoice_status: autoSettled.invoice_status,
+              settlement_type: autoSettled.settlement_type,
+              allocated_from_unapplied: autoSettled.allocated_from_unapplied,
+              previous_paid_total: autoSettled.previous_paid_total,
+              new_paid_total: autoSettled.new_paid_total,
+              allocations: autoSettled.allocations,
+              remaining_unapplied_cash: autoSettled.remaining_unapplied_cash
+            }
+          });
+        }
+      } catch (allocErr) {
+        // Normal condition if no unapplied cash available
+      }
+    }
+
     res.json({
       invoice_id: generated.invoice_id,
       invoice_no: generated.invoice_no,
@@ -284,7 +335,8 @@ function recurringRouter(pool) {
       invoice: {
         id: generated.invoice_id,
         invoice_no: generated.invoice_no
-      }
+      },
+      auto_settled: autoSettled
     });
   }));
 

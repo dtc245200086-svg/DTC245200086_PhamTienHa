@@ -96,7 +96,7 @@ function reconciliationRouter(pool) {
                   c.name AS customer_name, c.tax_code AS customer_tax_code
            FROM public.invoices i
            JOIN public.customers c ON c.id = i.customer_id
-           WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID')
+           WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')
              AND (
                $1 ILIKE ('%' || i.invoice_no || '%')
                OR (c.tax_code IS NOT NULL AND $1 ILIKE ('%' || c.tax_code || '%') AND (i.total - i.paid_total - i.adjusted_total) = $2::numeric)
@@ -191,7 +191,7 @@ function reconciliationRouter(pool) {
       if (!invRes.rowCount) throw new AppError(404, 'INVOICE_NOT_FOUND', 'Invoice was not found.');
       const inv = invRes.rows[0];
 
-      if (!['ISSUED', 'PARTIALLY_PAID'].includes(inv.status)) {
+      if (!['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(inv.status)) {
         throw new AppError(409, 'INVOICE_NOT_PAYABLE', 'Invoice is not in payable state.');
       }
 

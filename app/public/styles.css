@@ -141,6 +141,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .badge { display: inline-block; padding: 3px 8px; border-radius: 3px; background: var(--surface-alt); color: var(--ink); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
 .badge-paid { color: var(--good); background: var(--good-soft); }
 .badge-cancelled { color: var(--bad); background: var(--bad-soft); }
+.badge-overdue { color: #dc2626; background: #fee2e2; }
 .badge-draft { color: var(--muted); background: var(--surface-alt); border: 1px solid var(--line); }
 .badge-open { color: var(--warn); background: var(--warn-soft); }
 .badge-info { color: var(--info); background: var(--info-soft); }

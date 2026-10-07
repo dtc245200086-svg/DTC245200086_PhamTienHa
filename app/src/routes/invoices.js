@@ -14,8 +14,10 @@ const {
 const { requireAuth, requireRole, requirePermission } = require('./auth');
 const { invoicesCreated } = require('../metrics');
 const { recordAudit } = require('../audit');
+const { PaymentService } = require('../services/paymentService');
+const { extractAndRequireIdempotencyKey } = require('./payments');
 
-const STATUSES = new Set(['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED']);
+const STATUSES = new Set(['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE', 'PAID', 'CANCELLED']);
 const TAX_RATE = /^(?:0|[1-9]\d?)(?:\.\d{1,4})?$/;
 
 function invoiceInput(body) {
@@ -353,6 +355,59 @@ function invoiceRouter(pool) {
     });
 
     res.json({ invoice: await loadInvoice(pool, invoiceId) });
+  }));
+
+  // POST /api/invoices/:id/auto-allocate
+  router.post('/:id/auto-allocate', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const idempotencyKey = extractAndRequireIdempotencyKey(req);
+    const invoiceId = parseId(req.params.id);
+
+    const result = await inTransaction(async (client) => {
+      return await PaymentService.autoAllocateUnappliedCash(client, {
+        invoiceId,
+        recordedBy: req.user.id,
+        idempotencyKey,
+        source: 'MANUAL'
+      });
+    });
+
+    if (!result.is_idempotent_replay) {
+      writeLog('info', 'invoice.auto_allocated', {
+        request_id: req.requestId,
+        user: req.user.username,
+        invoice_id: invoiceId,
+        allocated_total: result.allocated_total,
+        allocated_from_unapplied: result.allocated_from_unapplied,
+        settlement_type: result.settlement_type
+      });
+
+      await recordAudit(pool, {
+        user: req.user,
+        ip: req.ip,
+        module: 'payments',
+        action: 'PAYMENT_AUTO_ALLOCATED',
+        targetRef: result.invoice_no || `INV-${invoiceId}`,
+        severity: 'INFO',
+        summary: `Tự động phân bổ ${result.allocated_total} ₫ từ ${result.allocations_count} khoản tiền thừa cho hóa đơn ${result.invoice_no || `INV-${invoiceId}`} (Nguồn: MANUAL)`,
+        metadata: {
+          invoice_id: result.invoice_id,
+          invoice_no: result.invoice_no,
+          allocated_total: result.allocated_total,
+          allocations_count: result.allocations_count,
+          payment_ids: result.payment_ids,
+          idempotency_key: idempotencyKey,
+          invoice_status: result.invoice_status,
+          settlement_type: result.settlement_type,
+          allocated_from_unapplied: result.allocated_from_unapplied,
+          previous_paid_total: result.previous_paid_total,
+          new_paid_total: result.new_paid_total,
+          allocations: result.allocations,
+          remaining_unapplied_cash: result.remaining_unapplied_cash
+        }
+      });
+    }
+
+    res.status(result.is_idempotent_replay ? 200 : 201).json(result);
   }));
 
   return router;

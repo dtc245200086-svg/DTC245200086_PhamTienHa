@@ -342,4 +342,4 @@ function paymentsRouter(pool) {
   return router;
 }
 
-module.exports = { paymentsRouter };
+module.exports = { paymentsRouter, extractAndRequireIdempotencyKey };

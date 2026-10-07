@@ -119,7 +119,8 @@ function statusBadge(status) {
   if (['PAID', 'ACTIVE', 'APPROVED', 'MATCHED', 'RECONCILED'].includes(status)) kind = 'badge-paid';
   else if (['CANCELLED', 'REJECTED', 'DISCREPANCY'].includes(status)) kind = 'badge-cancelled';
   else if (['DRAFT', 'PAUSED'].includes(status)) kind = 'badge-draft';
-  else if (['OVERDUE', 'PARTIALLY_PAID', 'UNMATCHED'].includes(status)) kind = 'badge-open';
+  else if (status === 'OVERDUE') kind = 'badge-overdue';
+  else if (['PARTIALLY_PAID', 'UNMATCHED'].includes(status)) kind = 'badge-open';
   else kind = 'badge-info';
   return node('span', `badge ${kind}`, status);
 }
@@ -650,8 +651,31 @@ async function renderInvoices(content) {
   if (detail) return renderInvoiceDetail(content, detail[1]);
   if (print) return renderInvoicePrint(content, print[1]);
 
-  const result = await api('/invoices?limit=100');
+  const query = new URLSearchParams(location.hash.split('?')[1] || '');
+  const statusFilter = query.get('status') || '';
+  const endpoint = statusFilter ? `/invoices?status=${encodeURIComponent(statusFilter)}&limit=100` : '/invoices?limit=100';
+  const result = await api(endpoint);
+
   content.append(pageHeading('Hóa đơn điện tử', 'Quản lý hóa đơn bán hàng, mã tra cứu CQT và trạng thái thanh toán.', anchor('+ Tạo hóa đơn mới', '#/invoices/new', 'button button-primary')));
+
+  const filterWrap = node('div', 'tabs');
+  const filterTabs = [
+    ['', 'Tất cả'],
+    ['OVERDUE', 'Quá hạn (OVERDUE)'],
+    ['ISSUED', 'Đã phát hành'],
+    ['PARTIALLY_PAID', 'Thanh toán một phần'],
+    ['PAID', 'Đã thanh toán'],
+    ['DRAFT', 'Bản nháp']
+  ];
+  for (const [st, label] of filterTabs) {
+    const btn = node('button', `tab-button ${statusFilter === st ? 'active' : ''}`, label);
+    btn.addEventListener('click', () => {
+      setHash(st ? `/invoices?status=${st}` : '/invoices');
+      render();
+    });
+    filterWrap.append(btn);
+  }
+  content.append(filterWrap);
 
   const rows = result.items.map((invoice) => {
     const row = node('tr');
@@ -842,6 +866,9 @@ async function renderInvoiceForm(content, invoiceId) {
 async function renderInvoiceDetail(content, invoiceId) {
   const { invoice } = await api(`/invoices/${invoiceId}`);
   const adjustResult = await api(`/adjustments?invoice_id=${invoiceId}`).catch(() => ({ items: [] }));
+  const unappliedBalance = invoice.customer_id
+    ? await api(`/customers/${invoice.customer_id}/unapplied-balance`).catch(() => null)
+    : null;
   const einvCode = invoice.e_invoice_code || invoice.einvoice_code;
 
   content.append(pageHeading(
@@ -850,8 +877,7 @@ async function renderInvoiceDetail(content, invoiceId) {
     anchor('In hóa đơn', `#/invoices/${invoice.id}/print`)
   ));
 
-  const details = node('div', 'detail-grid');
-  for (const [label, value] of [
+  const detailPairs = [
     ['Trạng thái', invoice.status],
     ['Mã mô phỏng nội bộ TT78', einvCode || 'Chưa cấp'],
     ['Ngày lập', dateText(invoice.issue_date)],
@@ -861,7 +887,19 @@ async function renderInvoiceDetail(content, invoiceId) {
     ['Tổng thanh toán', money(invoice.total)],
     ['Đã thanh toán', money(invoice.paid_total)],
     ['Còn nợ', money(invoice.outstanding)]
-  ]) {
+  ];
+  if (invoice.status === 'OVERDUE' && invoice.due_date) {
+    const dueTime = new Date(invoice.due_date).getTime();
+    const nowTime = new Date().setHours(0, 0, 0, 0);
+    const diffDays = Math.max(0, Math.floor((nowTime - dueTime) / (1000 * 60 * 60 * 24)));
+    detailPairs.push(['Số ngày quá hạn', `${diffDays} ngày`]);
+  }
+  if (unappliedBalance && Number(unappliedBalance.total_unapplied_cash) > 0) {
+    detailPairs.push(['Tiền thừa khả dụng của khách', money(unappliedBalance.total_unapplied_cash)]);
+  }
+
+  const details = node('div', 'detail-grid');
+  for (const [label, value] of detailPairs) {
     const item = node('div', 'detail-item');
     item.append(node('div', 'detail-label', label), node('div', 'detail-value', value));
     details.append(item);
@@ -925,8 +963,31 @@ async function renderInvoiceDetail(content, invoiceId) {
       }
     }));
   }
-  if (['ISSUED', 'PARTIALLY_PAID'].includes(invoice.status)) {
+  if (['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(invoice.status)) {
     actions.append(actionButton('+ Ghi nhận thanh toán', 'button-primary', () => setHash(`#/invoices/${invoice.id}/payment`)));
+    if (unappliedBalance && Number(unappliedBalance.total_unapplied_cash) > 0) {
+      actions.append(actionButton('⚡ Cấn trừ tự động từ tiền thừa', 'button-success', async () => {
+        const confirmMsg = `Xác nhận cấn trừ tự động từ tiền thừa khả dụng (${money(unappliedBalance.total_unapplied_cash)}) cho hóa đơn ${invoice.invoice_no || invoice.id}?`;
+        if (!window.confirm(confirmMsg)) return;
+
+        try {
+          const idempKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : (`ui-auto-alloc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+          const allocRes = await api(`/invoices/${invoice.id}/auto-allocate`, {
+            method: 'POST',
+            headers: { 'Idempotency-Key': idempKey },
+            body: JSON.stringify({})
+          });
+
+          alert(`Cấn trừ thành công ${money(allocRes.allocated_from_unapplied)}! Trạng thái mới: ${allocRes.invoice_status}`);
+          render();
+        } catch (err) {
+          content.prepend(alertBox(err.message, 'error'));
+        }
+      }));
+    }
     actions.append(anchor('+ Tạo biên bản điều chỉnh / C/N', `#/adjustments/new?invoice_id=${invoice.id}`, 'button button-secondary'));
   }
   if (currentUser.role === 'admin' && ['DRAFT', 'ISSUED'].includes(invoice.status) && isZero(invoice.paid_total)) {
@@ -1133,7 +1194,7 @@ async function renderAdjustmentForm(content) {
   const invoiceIdParam = query.get('invoice_id') || '';
 
   const invoices = await api('/invoices?limit=100');
-  const validInvoices = invoices.items.filter(inv => ['ISSUED', 'PARTIALLY_PAID', 'PAID'].includes(inv.status));
+  const validInvoices = invoices.items.filter(inv => ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE', 'PAID'].includes(inv.status));
 
   content.append(pageHeading('Lập biên bản điều chỉnh / Credit Note', 'Điều chỉnh giảm doanh thu, chiết khấu hoặc sai sót hóa đơn.', anchor('Quay lại', '#/adjustments')));
 
@@ -1283,7 +1344,16 @@ async function renderRecurringForm(content) {
   const amountField = makeField('Số tiền mỗi kỳ (VND)', { name: 'amount', type: 'number', step: '0.01', required: true });
   const startField = makeField('Ngày bắt đầu chu kỳ', { name: 'start_date', type: 'date', value: new Date().toISOString().slice(0, 10), required: true });
 
-  grid.append(custField.wrapper, cycleField.wrapper, amountField.wrapper, startField.wrapper);
+  const autoSettleWrap = node('div', 'field');
+  const autoSettleLabel = node('label', '', ' Cấn trừ tiền thừa tự động (Unapplied Cash)');
+  const autoSettleCheck = node('input');
+  autoSettleCheck.type = 'checkbox';
+  autoSettleCheck.checked = true;
+  autoSettleCheck.id = 'field-auto-settle';
+  autoSettleLabel.prepend(autoSettleCheck);
+  autoSettleWrap.append(autoSettleLabel);
+
+  grid.append(custField.wrapper, cycleField.wrapper, amountField.wrapper, startField.wrapper, autoSettleWrap);
 
   const message = node('div');
   const actions = node('div', 'form-actions');
@@ -1302,7 +1372,8 @@ async function renderRecurringForm(content) {
           customer_id: custField.control.value,
           billing_cycle: cycleField.control.value,
           amount: amountField.control.value,
-          start_date: startField.control.value
+          start_date: startField.control.value,
+          auto_settle_unapplied: autoSettleCheck.checked
         })
       });
       setHash('/recurring');

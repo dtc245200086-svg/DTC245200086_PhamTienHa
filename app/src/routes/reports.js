@@ -18,7 +18,7 @@ function reportsRouter(pool) {
            coalesce(sum(CASE WHEN current_date - due_date > 90 THEN total - paid_total - adjusted_total ELSE 0 END), 0)::numeric(14, 2)::text AS bucket_over90,
            coalesce(sum(total - paid_total - adjusted_total), 0)::numeric(14, 2)::text AS total_receivable
          FROM public.invoices
-         WHERE status IN ('ISSUED', 'PARTIALLY_PAID') AND (total - paid_total - adjusted_total) > 0`
+         WHERE status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE') AND (total - paid_total - adjusted_total) > 0`
       ),
       pool.query(
         `SELECT
@@ -37,7 +37,7 @@ function reportsRouter(pool) {
            coalesce(sum(i.total - i.paid_total - i.adjusted_total), 0)::numeric(14, 2)::text AS total_outstanding
          FROM public.customers c
          JOIN public.invoices i ON i.customer_id = c.id
-         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID') AND (i.total - i.paid_total - i.adjusted_total) > 0
+         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE') AND (i.total - i.paid_total - i.adjusted_total) > 0
          GROUP BY c.id
          HAVING sum(i.total - i.paid_total - i.adjusted_total) > 0
          ORDER BY total_debt DESC`
@@ -76,10 +76,10 @@ function reportsRouter(pool) {
     const [summaryResult, monthlySalesResult] = await Promise.all([
       pool.query(
         `SELECT
-           coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices WHERE status IN ('ISSUED', 'PARTIALLY_PAID') AND (total - paid_total - adjusted_total) > 0), 0)::numeric(14, 2) AS receivables,
+           coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices WHERE status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE') AND (total - paid_total - adjusted_total) > 0), 0)::numeric(14, 2) AS receivables,
            coalesce((SELECT sum(total - adjusted_total) FROM public.invoices WHERE issue_date >= current_date - interval '90 days' AND status <> 'CANCELLED'), 0)::numeric(14, 2) AS sales_90d,
            coalesce((SELECT sum(amount) FROM public.payments WHERE method IN ('CASH', 'BANK_TRANSFER', 'CARD') AND paid_at >= current_date - interval '90 days'), 0)::numeric(14, 2) AS collected_90d,
-           coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices WHERE due_date < current_date AND status IN ('ISSUED', 'PARTIALLY_PAID') AND (total - paid_total - adjusted_total) > 0), 0)::numeric(14, 2) AS overdue_total`
+           coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices WHERE due_date < current_date AND status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE') AND (total - paid_total - adjusted_total) > 0), 0)::numeric(14, 2) AS overdue_total`
       ),
       pool.query(
         `SELECT to_char(date_trunc('month', p.paid_at), 'YYYY-MM') AS month,
@@ -256,7 +256,7 @@ function reportsRouter(pool) {
            WHERE status = 'PROCESSED'
            GROUP BY original_invoice_id
          ) adj ON adj.original_invoice_id = i.id
-         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'PAID')
+         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE', 'PAID')
            AND ${dateFilter}`,
         params
       ),
@@ -279,7 +279,7 @@ function reportsRouter(pool) {
            WHERE status = 'PROCESSED'
            GROUP BY original_invoice_id
          ) adj ON adj.original_invoice_id = i.id
-         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'PAID')
+         WHERE i.status IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE', 'PAID')
            AND ${dateFilter}
          ORDER BY i.issue_date ASC, i.id ASC`,
         params

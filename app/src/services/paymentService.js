@@ -52,6 +52,17 @@ function computeAllocationRequestFingerprint(paymentId, allocations) {
 }
 
 /**
+ * Compute a deterministic cryptographic fingerprint of auto-allocation parameters.
+ */
+function computeAutoAllocateRequestFingerprint(invoiceId) {
+  const normalized = {
+    action: 'AUTO_ALLOCATE',
+    invoiceId: String(invoiceId)
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+/**
  * Core canonical service managing Payments, Allocations, and Unapplied Cash.
  */
 class PaymentService {
@@ -257,32 +268,14 @@ class PaymentService {
       }
     }
 
+    const cleanPaymentId = Number(paymentId);
+    if (!Number.isFinite(cleanPaymentId) || cleanPaymentId <= 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'A valid payment ID is required.');
+    }
+
     if (!Array.isArray(allocations) || allocations.length === 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'allocations array must not be empty.');
     }
-
-    // 1. Acquire transaction-level advisory lock on paymentId to serialize allocations and prevent concurrent over-allocation
-    await client.query(`SELECT pg_advisory_xact_lock($1)`, [paymentId]);
-
-    const payRes = await client.query(
-      `SELECT id, customer_id, amount::text, method, paid_at, reference, recorded_by
-       FROM public.payments WHERE id = $1`,
-      [paymentId]
-    );
-    if (!payRes.rowCount) {
-      throw new AppError(404, 'PAYMENT_NOT_FOUND', `Payment #${paymentId} was not found.`);
-    }
-    const payment = payRes.rows[0];
-    const paymentTotal = Number(payment.amount);
-
-    // Calculate current allocations on this payment
-    const currAllocRes = await client.query(
-      `SELECT coalesce(sum(allocated_amount), 0)::numeric(14, 2) AS current_allocated
-       FROM public.payment_allocations WHERE payment_id = $1`,
-      [paymentId]
-    );
-    const currentlyAllocated = Number(currAllocRes.rows[0].current_allocated);
-    const availableUnapplied = Math.max(0, Math.round((paymentTotal - currentlyAllocated) * 100) / 100);
 
     // Validate allocation payload format & amounts
     let reqSum = 0;
@@ -301,17 +294,16 @@ class PaymentService {
     }
 
     reqSum = Math.round(reqSum * 100) / 100;
-    if (reqSum > availableUnapplied + 0.001) {
-      throw new AppError(409, 'PAYMENT_EXCEEDS_UNAPPLIED',
-        `Requested allocation total (${reqSum.toFixed(2)} ₫) exceeds available unapplied payment cash (${availableUnapplied.toFixed(2)} ₫).`);
-    }
 
-    // 2. Lock all target invoices in ASCENDING order of IDs to eliminate deadlock risks
+    // CANONICAL LOCK ORDER - STEP 1 (Level 1):
+    // Lock all target invoices in ASCENDING order of IDs to eliminate deadlock risks
     const uniqueInvoiceIds = sortIds(validatedItems.map(i => i.invoiceId));
     const invRes = await client.query(
       `SELECT id, invoice_no, customer_id, status, total::text, paid_total::text, adjusted_total::text,
               (total - paid_total - adjusted_total)::numeric(14, 2) AS outstanding
-       FROM public.invoices WHERE id = ANY($1::bigint[]) FOR UPDATE`,
+       FROM public.invoices WHERE id = ANY($1::bigint[])
+       ORDER BY id ASC
+       FOR UPDATE`,
       [uniqueInvoiceIds]
     );
 
@@ -322,7 +314,52 @@ class PaymentService {
       }
     }
 
-    // 3. Validate invoice capacity & customer matching
+    const invoiceCustomerIds = [...new Set(invRes.rows.map(inv => Number(inv.customer_id)))];
+    if (invoiceCustomerIds.length > 1) {
+      throw new AppError(400, 'CUSTOMER_MISMATCH', 'Target invoices belong to multiple different customers.');
+    }
+    const targetCustomerId = invoiceCustomerIds[0];
+
+    // CANONICAL LOCK ORDER - STEP 2 (Level 2):
+    // Acquire transaction-level advisory lock on customer unapplied pool to serialize allocations
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('cust_unapplied_pool'), $1)`,
+      [targetCustomerId]
+    );
+
+    // CANONICAL LOCK ORDER - STEP 3 (Level 3):
+    // Acquire namespaced transaction-level advisory lock on paymentId
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('payment_lock'), $1::integer)`,
+      [cleanPaymentId]
+    );
+
+    const payRes = await client.query(
+      `SELECT id, customer_id, amount::text, method, paid_at, reference, recorded_by
+       FROM public.payments WHERE id = $1`,
+      [cleanPaymentId]
+    );
+    if (!payRes.rowCount) {
+      throw new AppError(404, 'PAYMENT_NOT_FOUND', `Payment #${cleanPaymentId} was not found.`);
+    }
+    const payment = payRes.rows[0];
+    const paymentTotal = Number(payment.amount);
+
+    // Calculate current allocations on this payment
+    const currAllocRes = await client.query(
+      `SELECT coalesce(sum(allocated_amount), 0)::numeric(14, 2) AS current_allocated
+       FROM public.payment_allocations WHERE payment_id = $1`,
+      [cleanPaymentId]
+    );
+    const currentlyAllocated = Number(currAllocRes.rows[0].current_allocated);
+    const availableUnapplied = Math.max(0, Math.round((paymentTotal - currentlyAllocated) * 100) / 100);
+
+    if (reqSum > availableUnapplied + 0.001) {
+      throw new AppError(409, 'PAYMENT_EXCEEDS_UNAPPLIED',
+        `Requested allocation total (${reqSum.toFixed(2)} ₫) exceeds available unapplied payment cash (${availableUnapplied.toFixed(2)} ₫).`);
+    }
+
+    // Validate invoice capacity & customer matching
     // Track cumulative allocation per invoice within this request
     const requestedPerInvoice = new Map();
     for (const item of validatedItems) {
@@ -336,7 +373,7 @@ class PaymentService {
         throw new AppError(400, 'CUSTOMER_MISMATCH',
           `Invoice ${inv.invoice_no} belongs to customer #${inv.customer_id}, but payment belongs to customer #${payment.customer_id}.`);
       }
-      if (!['ISSUED', 'PARTIALLY_PAID'].includes(inv.status)) {
+      if (!['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(inv.status)) {
         throw new AppError(409, 'INVOICE_NOT_PAYABLE',
           `Invoice ${inv.invoice_no} is in status ${inv.status} and cannot accept allocations.`);
       }
@@ -348,7 +385,7 @@ class PaymentService {
       }
     }
 
-    // 4. Apply allocations and update invoices
+    // Apply allocations and update invoices
     const insertedAllocations = [];
     const updatedInvoices = [];
 
@@ -357,14 +394,18 @@ class PaymentService {
         `INSERT INTO public.payment_allocations (payment_id, invoice_id, allocated_amount, created_by, notes)
          VALUES ($1, $2, $3::numeric, $4, $5)
          RETURNING id, payment_id, invoice_id, allocated_amount::text, created_at, created_by, notes`,
-        [paymentId, item.invoiceId, item.amount.toFixed(2), recordedBy, item.notes]
+        [cleanPaymentId, item.invoiceId, item.amount.toFixed(2), recordedBy, item.notes]
       );
       insertedAllocations.push(allocInsert.rows[0]);
 
       const invUpdate = await client.query(
         `UPDATE public.invoices
          SET paid_total = paid_total + $2::numeric,
-             status = CASE WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+             status = CASE 
+               WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID'
+               WHEN status = 'OVERDUE' THEN 'OVERDUE'
+               ELSE 'PARTIALLY_PAID' 
+             END
          WHERE id = $1
          RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text,
                    (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding`,
@@ -391,7 +432,7 @@ class PaymentService {
         `INSERT INTO public.payment_idempotency_keys
           (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
          VALUES ($1, $2, $3, 201, $4, $5)`,
-        [cleanIdempotencyKey, requestHash, paymentId, JSON.stringify(resultPayload), recordedBy]
+        [cleanIdempotencyKey, requestHash, cleanPaymentId, JSON.stringify(resultPayload), recordedBy]
       );
     }
 
@@ -454,6 +495,311 @@ class PaymentService {
       [invoiceId]
     );
     return res.rows;
+  }
+
+  /**
+   * Auto-allocate customer's unapplied cash to an outstanding invoice using strict FIFO ordering.
+   * Enforces transactional two-phase row locking, idempotency protection, and invariant preservation.
+   */
+  static async autoAllocateUnappliedCash(client, {
+    customerId = null,
+    invoiceId,
+    recordedBy = 1,
+    idempotencyKey = null,
+    source = 'MANUAL'
+  }) {
+    // 0. Mandatory Idempotency-Key validation
+    if (!idempotencyKey || typeof idempotencyKey !== 'string' || idempotencyKey.trim().length === 0) {
+      throw new AppError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required for auto-allocation operations.');
+    }
+    const cleanIdempotencyKey = String(idempotencyKey).trim();
+    if (cleanIdempotencyKey.length > 255) {
+      throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must not exceed 255 characters.');
+    }
+
+    const cleanInvoiceId = Number(invoiceId);
+    if (!Number.isFinite(cleanInvoiceId) || cleanInvoiceId <= 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'A valid invoice ID is required.');
+    }
+
+    const requestHash = computeAutoAllocateRequestFingerprint(cleanInvoiceId);
+
+    // Acquire 64-bit transaction-level advisory lock on idempotency key
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('idemp_auto_alloc'), hashtext($1))`,
+      [cleanIdempotencyKey]
+    );
+
+    // Check if key was already processed and committed
+    const existingKeyRes = await client.query(
+      `SELECT id, idempotency_key, request_hash, payment_id, response_status, response_body
+       FROM public.payment_idempotency_keys
+       WHERE idempotency_key = $1`,
+      [cleanIdempotencyKey]
+    );
+
+    if (existingKeyRes.rowCount > 0) {
+      const keyRow = existingKeyRes.rows[0];
+      if (keyRow.request_hash !== requestHash) {
+        throw new AppError(409, 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+          `Idempotency-Key '${cleanIdempotencyKey}' was already used with a different request payload.`);
+      }
+      return {
+        ...keyRow.response_body,
+        is_idempotent_replay: true
+      };
+    }
+
+    // Step 1: Pessimistic Row Lock on target invoice (Parent Lock)
+    const invRes = await client.query(
+      `SELECT id, invoice_no, customer_id, status, total::text, paid_total::text, adjusted_total::text,
+              (total - paid_total - adjusted_total)::numeric(14, 2) AS outstanding
+       FROM public.invoices WHERE id = $1 FOR UPDATE`,
+      [cleanInvoiceId]
+    );
+
+    if (!invRes.rowCount) {
+      throw new AppError(404, 'INVOICE_NOT_FOUND', `Invoice #${cleanInvoiceId} was not found.`);
+    }
+
+    const invoice = invRes.rows[0];
+
+    // Customer validation if provided
+    if (customerId && Number(invoice.customer_id) !== Number(customerId)) {
+      throw new AppError(400, 'CUSTOMER_MISMATCH',
+        `Invoice ${invoice.invoice_no} belongs to customer #${invoice.customer_id}, but customer #${customerId} was requested.`);
+    }
+
+    const targetCustomerId = invoice.customer_id;
+
+    if (!['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(invoice.status)) {
+      if (invoice.status === 'PAID') {
+        throw new AppError(400, 'INVOICE_ALREADY_PAID', `Invoice ${invoice.invoice_no} is already fully paid.`);
+      }
+      throw new AppError(409, 'INVOICE_NOT_PAYABLE',
+        `Invoice ${invoice.invoice_no} is in status ${invoice.status} and cannot accept allocations.`);
+    }
+
+    const outstanding = Number(invoice.outstanding);
+    if (outstanding <= 0.0001) {
+      throw new AppError(400, 'INVOICE_ALREADY_PAID', `Invoice ${invoice.invoice_no} has no outstanding balance.`);
+    }
+
+    // CANONICAL LOCK ORDER - STEP 2 (Level 2):
+    // Acquire transaction-level advisory lock on customer unapplied pool to serialize allocations
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('cust_unapplied_pool'), $1)`,
+      [targetCustomerId]
+    );
+
+    // CANONICAL LOCK ORDER - STEP 3 (Level 3):
+    // Query candidate payments having unapplied cash, and acquire namespaced advisory locks in strictly ASCENDING order
+    const candidateRes = await client.query(
+      `SELECT p.id
+       FROM public.payments p
+       LEFT JOIN public.payment_allocations pa ON pa.payment_id = p.id
+       WHERE p.customer_id = $1
+       GROUP BY p.id, p.amount
+       HAVING p.amount > coalesce(sum(pa.allocated_amount), 0)
+       ORDER BY p.id ASC`,
+      [targetCustomerId]
+    );
+
+    if (candidateRes.rowCount === 0) {
+      throw new AppError(400, 'NO_UNAPPLIED_CASH_AVAILABLE', 'Customer has no unapplied cash available for allocation.');
+    }
+
+    const candidatePaymentIds = sortIds(candidateRes.rows.map(p => p.id));
+    for (const pId of candidatePaymentIds) {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext('payment_lock'), $1::integer)`,
+        [pId]
+      );
+    }
+
+    // Now that candidate payments are locked in Level 3, query unapplied cash pool with strict FIFO ordering (paid_at ASC, id ASC)
+    const fifoRes = await client.query(
+      `SELECT p.id, p.amount::text, p.paid_at,
+              coalesce(sum(pa.allocated_amount), 0)::numeric(14, 2)::text AS allocated_total,
+              (p.amount - coalesce(sum(pa.allocated_amount), 0))::numeric(14, 2)::text AS unapplied_amount
+       FROM public.payments p
+       LEFT JOIN public.payment_allocations pa ON pa.payment_id = p.id
+       WHERE p.customer_id = $1
+       GROUP BY p.id, p.amount, p.paid_at
+       HAVING p.amount > coalesce(sum(pa.allocated_amount), 0)
+       ORDER BY p.paid_at ASC, p.id ASC`,
+      [targetCustomerId]
+    );
+
+    if (fifoRes.rowCount === 0) {
+      throw new AppError(400, 'NO_UNAPPLIED_CASH_AVAILABLE', 'Customer has no unapplied cash available for allocation.');
+    }
+
+    // Step 4: Compute FIFO allocations
+    let remainingToAllocate = outstanding;
+    const allocationsToCreate = [];
+
+    for (const p of fifoRes.rows) {
+      if (remainingToAllocate <= 0.0001) break;
+      const unapplied = Number(p.unapplied_amount);
+      if (unapplied <= 0) continue;
+
+      const allocAmt = Math.min(unapplied, remainingToAllocate);
+      const roundedAllocAmt = Math.round(allocAmt * 100) / 100;
+      if (roundedAllocAmt > 0) {
+        allocationsToCreate.push({
+          paymentId: p.id,
+          amount: roundedAllocAmt
+        });
+        remainingToAllocate = Math.round((remainingToAllocate - roundedAllocAmt) * 100) / 100;
+      }
+    }
+
+    if (allocationsToCreate.length === 0) {
+      throw new AppError(400, 'NO_UNAPPLIED_CASH_AVAILABLE', 'Customer has no unapplied cash available for allocation.');
+    }
+
+    // Step 5: Apply allocations to payment_allocations table
+    const noteText = source === 'SCHEDULER'
+      ? 'Tự động cấn trừ theo chu kỳ thuê bao định kỳ'
+      : 'Kế toán cấn trừ tự động từ tiền thừa';
+
+    const insertedAllocations = [];
+    for (const item of allocationsToCreate) {
+      const allocInsert = await client.query(
+        `INSERT INTO public.payment_allocations (payment_id, invoice_id, allocated_amount, created_by, notes)
+         VALUES ($1, $2, $3::numeric, $4, $5)
+         RETURNING id, payment_id, invoice_id, allocated_amount::text, created_at`,
+        [item.paymentId, cleanInvoiceId, item.amount.toFixed(2), recordedBy || 1, noteText]
+      );
+      insertedAllocations.push({
+        allocation_id: Number(allocInsert.rows[0].id),
+        payment_id: Number(allocInsert.rows[0].payment_id),
+        allocated_amount: allocInsert.rows[0].allocated_amount,
+        created_at: allocInsert.rows[0].created_at
+      });
+    }
+
+    const totalAllocated = allocationsToCreate.reduce((sum, a) => sum + a.amount, 0);
+    const roundedTotalAllocated = Math.round(totalAllocated * 100) / 100;
+
+    // Step 6: Update invoice paid_total and status
+    const invUpdate = await client.query(
+      `UPDATE public.invoices
+       SET paid_total = paid_total + $2::numeric,
+           status = CASE 
+             WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID'
+             WHEN status = 'OVERDUE' THEN 'OVERDUE'
+             ELSE 'PARTIALLY_PAID' 
+           END
+       WHERE id = $1
+       RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text,
+                 (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding`,
+      [cleanInvoiceId, roundedTotalAllocated.toFixed(2)]
+    );
+    const updatedInvoice = invUpdate.rows[0];
+
+    // Step 7: Query customer's remaining unapplied cash
+    const remRes = await client.query(
+      `SELECT coalesce(sum(p.amount - coalesce(alloc.allocated_total, 0)), 0)::numeric(14, 2)::text AS remaining_unapplied_cash
+       FROM public.payments p
+       LEFT JOIN (
+         SELECT payment_id, sum(allocated_amount) AS allocated_total
+         FROM public.payment_allocations
+         GROUP BY payment_id
+       ) alloc ON alloc.payment_id = p.id
+       WHERE p.customer_id = $1`,
+      [targetCustomerId]
+    );
+    const remainingUnappliedCash = remRes.rows[0]?.remaining_unapplied_cash || '0.00';
+
+    const settlementType = updatedInvoice.status === 'PAID' ? 'FULL' : 'PARTIAL';
+    const paymentIds = Array.from(new Set(insertedAllocations.map(a => Number(a.payment_id))));
+    const resultPayload = {
+      success: true,
+      invoice_id: Number(invoice.id),
+      invoice_no: invoice.invoice_no,
+      invoice_status: updatedInvoice.status,
+      previous_paid_total: Number(invoice.paid_total).toFixed(2),
+      new_paid_total: Number(updatedInvoice.paid_total).toFixed(2),
+      allocated_total: roundedTotalAllocated.toFixed(2),
+      allocated_from_unapplied: roundedTotalAllocated.toFixed(2),
+      allocations_count: insertedAllocations.length,
+      payment_ids: paymentIds,
+      idempotency_key: cleanIdempotencyKey,
+      settlement_type: settlementType,
+      allocations: insertedAllocations,
+      remaining_unapplied_cash: remainingUnappliedCash,
+      is_idempotent_replay: false
+    };
+
+    // Step 7: Persist idempotency mapping
+    await client.query(
+      `INSERT INTO public.payment_idempotency_keys
+        (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
+       VALUES ($1, $2, $3, 201, $4, $5)`,
+      [
+        cleanIdempotencyKey,
+        requestHash,
+        allocationsToCreate[0]?.paymentId || null,
+        JSON.stringify(resultPayload),
+        recordedBy || 1
+      ]
+    );
+
+    return resultPayload;
+  }
+
+  /**
+   * Fetch customer unapplied cash balance and available payments.
+   */
+  static async getCustomerUnappliedBalance(poolOrClient, customerId) {
+    const cleanCustomerId = Number(customerId);
+    if (!Number.isFinite(cleanCustomerId) || cleanCustomerId <= 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'A valid customer ID is required.');
+    }
+
+    const custRes = await poolOrClient.query(
+      `SELECT id, name FROM public.customers WHERE id = $1`,
+      [cleanCustomerId]
+    );
+    if (!custRes.rowCount) {
+      throw new AppError(404, 'CUSTOMER_NOT_FOUND', `Customer #${cleanCustomerId} was not found.`);
+    }
+    const customer = custRes.rows[0];
+
+    const payRes = await poolOrClient.query(
+      `SELECT p.id, p.amount::numeric(14, 2)::text AS amount,
+              coalesce(sum(pa.allocated_amount), 0)::numeric(14, 2)::text AS allocated_amount,
+              (p.amount - coalesce(sum(pa.allocated_amount), 0))::numeric(14, 2)::text AS unapplied_amount,
+              to_char(p.paid_at, 'YYYY-MM-DD') AS paid_at,
+              p.method, p.reference
+       FROM public.payments p
+       LEFT JOIN public.payment_allocations pa ON pa.payment_id = p.id
+       WHERE p.customer_id = $1
+       GROUP BY p.id, p.amount, p.paid_at, p.method, p.reference
+       HAVING p.amount > coalesce(sum(pa.allocated_amount), 0)
+       ORDER BY p.paid_at ASC, p.id ASC`,
+      [cleanCustomerId]
+    );
+
+    const totalUnapplied = payRes.rows.reduce((sum, p) => sum + Number(p.unapplied_amount), 0);
+
+    return {
+      customer_id: Number(customer.id),
+      customer_name: customer.name,
+      total_unapplied_cash: totalUnapplied.toFixed(2),
+      available_payments_count: payRes.rows.length,
+      payments: payRes.rows.map(p => ({
+        id: Number(p.id),
+        amount: p.amount,
+        allocated_amount: p.allocated_amount,
+        unapplied_amount: p.unapplied_amount,
+        paid_at: p.paid_at,
+        method: p.method,
+        reference: p.reference || null
+      }))
+    };
   }
 }
 
