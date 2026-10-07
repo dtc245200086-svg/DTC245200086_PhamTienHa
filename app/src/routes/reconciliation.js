@@ -128,7 +128,8 @@ function reconciliationRouter(pool) {
             bankAccount: tx.bank_account,
             notes: noteText,
             recordedBy: req.user.id,
-            allocations: [{ invoiceId: inv.id, amount: payAmt }]
+            allocations: [{ invoiceId: inv.id, amount: payAmt }],
+            idempotencyKey: `BANK-TX-MATCH-${tx.id}`
           });
           const paymentId = payResult.payment.id;
 
@@ -218,7 +219,8 @@ function reconciliationRouter(pool) {
         bankAccount: tx.bank_account,
         notes: noteText,
         recordedBy: req.user.id,
-        allocations: [{ invoiceId, amount: payAmt }]
+        allocations: [{ invoiceId, amount: payAmt }],
+        idempotencyKey: `BANK-TX-MATCH-${txId}`
       });
       const paymentId = payResult.payment.id;
 

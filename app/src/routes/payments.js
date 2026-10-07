@@ -10,11 +10,55 @@ const { PaymentService } = require('../services/paymentService');
 
 const METHODS = new Set(['CASH', 'BANK_TRANSFER', 'CARD']);
 
+/**
+ * Extract and validate mandatory Idempotency-Key across canonical and backward-compatible sources.
+ * Enforces non-empty string, length constraints, and strict conflict detection across sources.
+ */
+function extractAndRequireIdempotencyKey(req) {
+  const canonical = req.headers['idempotency-key'];
+  const legacy = req.headers['x-idempotency-key'];
+  const bodyKey = (req.body && typeof req.body === 'object') ? req.body.idempotency_key : undefined;
+
+  const sources = [];
+  if (canonical !== undefined && canonical !== null) {
+    sources.push({ name: 'Idempotency-Key', val: String(canonical).trim() });
+  }
+  if (legacy !== undefined && legacy !== null) {
+    sources.push({ name: 'X-Idempotency-Key', val: String(legacy).trim() });
+  }
+  if (bodyKey !== undefined && bodyKey !== null) {
+    sources.push({ name: 'body.idempotency_key', val: String(bodyKey).trim() });
+  }
+
+  const nonEmptySources = sources.filter(s => s.val.length > 0);
+
+  if (nonEmptySources.length === 0) {
+    throw new AppError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency-Key header is required for payment mutations.');
+  }
+
+  // Conflict check: if multiple distinct non-empty key values are provided across sources
+  const first = nonEmptySources[0];
+  for (let i = 1; i < nonEmptySources.length; i++) {
+    if (nonEmptySources[i].val !== first.val) {
+      throw new AppError(400, 'CONFLICTING_IDEMPOTENCY_KEYS',
+        `Conflicting idempotency keys provided: '${first.name}' (${first.val}) and '${nonEmptySources[i].name}' (${nonEmptySources[i].val}).`);
+    }
+  }
+
+  const key = first.val;
+  if (key.length > 255) {
+    throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must not exceed 255 characters.');
+  }
+
+  return key;
+}
+
 function paymentsRouter(pool) {
   const router = express.Router();
 
   // POST /api/invoices/:id/payments (Pay specific invoice)
   router.post('/invoices/:id/payments', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const idempotencyKey = extractAndRequireIdempotencyKey(req);
     const invoiceId = parseId(req.params.id);
     requireObject(req.body);
     const amount = requireDecimal(req.body.amount, 'amount');
@@ -26,9 +70,6 @@ function paymentsRouter(pool) {
     const notes = requireText(req.body.notes, 'notes', 1000, { optional: true });
 
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
-
-    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
-    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
 
     const result = await inTransaction(async (client) => {
       return await PaymentService.createPayment(client, {
@@ -84,6 +125,7 @@ function paymentsRouter(pool) {
 
   // POST /api/payments (Direct payment creation with optional multi-allocation or unapplied cash)
   router.post('/payments', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const idempotencyKey = extractAndRequireIdempotencyKey(req);
     requireObject(req.body);
     const customerId = req.body.customer_id ? parseId(req.body.customer_id, 'customer_id') : null;
     const invoiceId = req.body.invoice_id ? parseId(req.body.invoice_id, 'invoice_id') : null;
@@ -97,9 +139,6 @@ function paymentsRouter(pool) {
     const allocations = Array.isArray(req.body.allocations) ? req.body.allocations : [];
 
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
-
-    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
-    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
 
     const result = await inTransaction(async (client) => {
       return await PaymentService.createPayment(client, {
@@ -138,15 +177,13 @@ function paymentsRouter(pool) {
 
   // POST /api/payments/:id/allocations (Allocate unapplied cash of existing payment)
   router.post('/payments/:id/allocations', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const idempotencyKey = extractAndRequireIdempotencyKey(req);
     const paymentId = parseId(req.params.id);
     requireObject(req.body);
     const allocations = req.body.allocations;
     if (!Array.isArray(allocations) || allocations.length === 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'allocations array is required and must not be empty.');
     }
-
-    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
-    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
 
     const result = await inTransaction(async (client) => {
       return await PaymentService.allocatePayment(client, {
@@ -175,10 +212,8 @@ function paymentsRouter(pool) {
 
   // POST /api/payments/allocate (Multi-invoice payment allocation)
   router.post('/payments/allocate', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const idempotencyKey = extractAndRequireIdempotencyKey(req);
     requireObject(req.body);
-
-    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
-    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
 
     // If payment_id is provided, allocate existing payment
     if (req.body.payment_id) {

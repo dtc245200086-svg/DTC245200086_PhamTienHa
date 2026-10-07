@@ -74,6 +74,15 @@ class PaymentService {
     allocations = [],
     idempotencyKey = null
   }) {
+    // 0. Mandatory Idempotency-Key validation (P1.2.2 Hardening)
+    if (!idempotencyKey || typeof idempotencyKey !== 'string' || idempotencyKey.trim().length === 0) {
+      throw new AppError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required for payment operations.');
+    }
+    const cleanIdempotencyKey = String(idempotencyKey).trim();
+    if (cleanIdempotencyKey.length > 255) {
+      throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must not exceed 255 characters.');
+    }
+
     const paymentAmount = Number(amount);
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
       throw new AppError(400, 'INVALID_PAYMENT_AMOUNT', 'Payment amount must be greater than zero.');
@@ -100,50 +109,41 @@ class PaymentService {
       }
     }
 
-    // 0. Idempotency Check & Advisory Lock
-    let cleanIdempotencyKey = null;
-    let requestHash = null;
-    if (idempotencyKey) {
-      cleanIdempotencyKey = String(idempotencyKey).trim();
-      if (cleanIdempotencyKey.length === 0 || cleanIdempotencyKey.length > 255) {
-        throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must be between 1 and 255 characters.');
+    // Idempotency Advisory Lock & Check
+    const requestHash = computePaymentRequestFingerprint({
+      customerId: resolvedCustomerId,
+      invoiceId,
+      amount: paymentAmount,
+      method: cleanMethod,
+      paidAt,
+      reference,
+      allocations: effectiveAllocations
+    });
+
+    // Acquire 64-bit transaction-level advisory lock on idempotency key
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('idemp_payment'), hashtext($1))`,
+      [cleanIdempotencyKey]
+    );
+
+    // Check if key already processed and committed
+    const existingKeyRes = await client.query(
+      `SELECT id, idempotency_key, request_hash, payment_id, response_status, response_body
+       FROM public.payment_idempotency_keys
+       WHERE idempotency_key = $1`,
+      [cleanIdempotencyKey]
+    );
+
+    if (existingKeyRes.rowCount > 0) {
+      const keyRow = existingKeyRes.rows[0];
+      if (keyRow.request_hash !== requestHash) {
+        throw new AppError(409, 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+          `Idempotency-Key '${cleanIdempotencyKey}' was already used with a different request payload.`);
       }
-
-      requestHash = computePaymentRequestFingerprint({
-        customerId: resolvedCustomerId,
-        invoiceId,
-        amount: paymentAmount,
-        method: cleanMethod,
-        paidAt,
-        reference,
-        allocations: effectiveAllocations
-      });
-
-      // Acquire 64-bit transaction-level advisory lock on idempotency key
-      await client.query(
-        `SELECT pg_advisory_xact_lock(hashtext('idemp_payment'), hashtext($1))`,
-        [cleanIdempotencyKey]
-      );
-
-      // Check if key already processed and committed
-      const existingKeyRes = await client.query(
-        `SELECT id, idempotency_key, request_hash, payment_id, response_status, response_body
-         FROM public.payment_idempotency_keys
-         WHERE idempotency_key = $1`,
-        [cleanIdempotencyKey]
-      );
-
-      if (existingKeyRes.rowCount > 0) {
-        const keyRow = existingKeyRes.rows[0];
-        if (keyRow.request_hash !== requestHash) {
-          throw new AppError(409, 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
-            `Idempotency-Key '${cleanIdempotencyKey}' was already used with a different request payload.`);
-        }
-        return {
-          ...keyRow.response_body,
-          is_idempotent_replay: true
-        };
-      }
+      return {
+        ...keyRow.response_body,
+        is_idempotent_replay: true
+      };
     }
 
     // 1. Insert the master payment record representing the real cash inflow
@@ -174,7 +174,8 @@ class PaymentService {
       const allocResult = await this.allocatePayment(client, {
         paymentId: paymentRow.id,
         allocations: effectiveAllocations,
-        recordedBy
+        recordedBy,
+        skipIdempotencyCheck: true
       });
       appliedAllocations = allocResult.allocations;
       updatedInvoices = allocResult.updatedInvoices;
@@ -191,15 +192,13 @@ class PaymentService {
       updated_invoices: updatedInvoices
     };
 
-    // 3. Persist idempotency key mapping if provided
-    if (cleanIdempotencyKey) {
-      await client.query(
-        `INSERT INTO public.payment_idempotency_keys
-          (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
-         VALUES ($1, $2, $3, 201, $4, $5)`,
-        [cleanIdempotencyKey, requestHash, paymentRow.id, JSON.stringify(resultPayload), recordedBy]
-      );
-    }
+    // 3. Persist idempotency key mapping
+    await client.query(
+      `INSERT INTO public.payment_idempotency_keys
+        (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
+       VALUES ($1, $2, $3, 201, $4, $5)`,
+      [cleanIdempotencyKey, requestHash, paymentRow.id, JSON.stringify(resultPayload), recordedBy]
+    );
 
     return {
       ...resultPayload,
@@ -215,19 +214,20 @@ class PaymentService {
     paymentId,
     allocations = [],
     recordedBy,
-    idempotencyKey = null
+    idempotencyKey = null,
+    skipIdempotencyCheck = false
   }) {
-    if (!Array.isArray(allocations) || allocations.length === 0) {
-      throw new AppError(400, 'VALIDATION_ERROR', 'allocations array must not be empty.');
-    }
-
-    // 0. Idempotency Check & Advisory Lock for allocations
+    // 0. Mandatory Idempotency-Key validation for external allocation mutations (P1.2.2 Hardening)
     let cleanIdempotencyKey = null;
     let requestHash = null;
-    if (idempotencyKey) {
+
+    if (!skipIdempotencyCheck) {
+      if (!idempotencyKey || typeof idempotencyKey !== 'string' || idempotencyKey.trim().length === 0) {
+        throw new AppError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency key is required for allocation operations.');
+      }
       cleanIdempotencyKey = String(idempotencyKey).trim();
-      if (cleanIdempotencyKey.length === 0 || cleanIdempotencyKey.length > 255) {
-        throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must be between 1 and 255 characters.');
+      if (cleanIdempotencyKey.length > 255) {
+        throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must not exceed 255 characters.');
       }
 
       requestHash = computeAllocationRequestFingerprint(paymentId, allocations);
@@ -255,6 +255,10 @@ class PaymentService {
           is_idempotent_replay: true
         };
       }
+    }
+
+    if (!Array.isArray(allocations) || allocations.length === 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'allocations array must not be empty.');
     }
 
     // 1. Acquire transaction-level advisory lock on paymentId to serialize allocations and prevent concurrent over-allocation

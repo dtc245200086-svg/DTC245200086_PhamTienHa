@@ -965,8 +965,12 @@ async function renderPaymentForm(content, invoice) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
+      const idempKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : (`ui-pay-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       await api(`/invoices/${invoice.id}/payments`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': idempKey },
         body: JSON.stringify({
           amount: amount.control.value,
           method: method.control.value,

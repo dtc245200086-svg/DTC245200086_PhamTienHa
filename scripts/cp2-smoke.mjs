@@ -18,10 +18,18 @@ class ApiClient {
     this.setCookie = '';
   }
 
-  async request(path, { method = 'GET', body } = {}) {
+  async request(path, { method = 'GET', body, headers: customHeaders } = {}) {
     const headers = new Headers();
     if (body !== undefined) headers.set('Content-Type', 'application/json');
     if (this.cookie) headers.set('Cookie', this.cookie);
+    if (customHeaders) {
+      for (const [k, v] of Object.entries(customHeaders)) headers.set(k, v);
+    }
+    if (method === 'POST' && (path.includes('/payments') || path.includes('/allocations'))) {
+      if (!headers.has('Idempotency-Key') && !headers.has('X-Idempotency-Key') && !(body && body.idempotency_key)) {
+        headers.set('Idempotency-Key', `cp2-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      }
+    }
     const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers,
