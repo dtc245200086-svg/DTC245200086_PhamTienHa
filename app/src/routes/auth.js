@@ -3,11 +3,23 @@ const bcrypt = require('bcryptjs');
 const { AppError, asyncRoute } = require('../errors');
 const { writeLog } = require('../logger');
 
+const DEFAULT_STAFF_PERMISSIONS = [
+  'invoice.create', 'invoice.read', 'invoice.update', 'invoice.issue',
+  'customer.create', 'customer.read', 'customer.update',
+  'payment.create', 'payment.read',
+  'adjustment.create',
+  'product.manage',
+  'report.view'
+];
+
 function requireAuth(req, res, next) {
   if (!req.session?.user) {
     return next(new AppError(401, 'UNAUTHENTICATED', 'Authentication is required.'));
   }
   req.user = req.session.user;
+  if (!req.user.permissions) {
+    req.user.permissions = req.user.role === 'admin' ? ['*'] : DEFAULT_STAFF_PERMISSIONS;
+  }
   next();
 }
 
@@ -16,6 +28,18 @@ function requireRole(role) {
     if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Authentication is required.'));
     if (req.user.role !== role) return next(new AppError(403, 'FORBIDDEN', 'You do not have permission to perform this action.'));
     next();
+  };
+}
+
+function requirePermission(permissionCode) {
+  return (req, res, next) => {
+    if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Authentication is required.'));
+    if (req.user.role === 'admin') return next();
+    const userPerms = req.user.permissions || [];
+    if (userPerms.includes('*') || userPerms.includes(permissionCode)) {
+      return next();
+    }
+    return next(new AppError(403, 'FORBIDDEN', `You do not have permission to perform this action (${permissionCode}).`));
   };
 }
 
@@ -51,8 +75,27 @@ function authRouter(pool, cookieSecure) {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid username or password.');
     }
 
+    // Resolve permissions from database
+    let permissions = ['*'];
+    if (account.role !== 'admin') {
+      const permsRes = await pool.query(
+        `SELECT p.code FROM public.role_permissions rp
+         JOIN public.permissions p ON p.id = rp.permission_id
+         JOIN public.roles r ON r.id = rp.role_id
+         WHERE r.code = $1`,
+        [account.role]
+      );
+      permissions = permsRes.rows.map(r => r.code);
+      if (!permissions.length) permissions = DEFAULT_STAFF_PERMISSIONS;
+    }
+
     await regenerateSession(req);
-    req.session.user = { id: account.id, username: account.username, role: account.role };
+    req.session.user = {
+      id: account.id,
+      username: account.username,
+      role: account.role,
+      permissions
+    };
     await saveSession(req);
     writeLog('info', 'auth.login_success', { request_id: req.requestId, user: account.username });
     res.status(200).json({ user: req.session.user });
@@ -80,4 +123,4 @@ function authRouter(pool, cookieSecure) {
   return router;
 }
 
-module.exports = { authRouter, requireAuth, requireRole };
+module.exports = { authRouter, requireAuth, requireRole, requirePermission };

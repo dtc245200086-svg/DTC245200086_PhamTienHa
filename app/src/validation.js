@@ -69,10 +69,20 @@ function validateItems(items) {
   }
   return items.map((item, index) => {
     requireObject(item, 'INVALID_ITEM');
+    const sku = requireText(item.sku, `items[${index}].sku`, 64, { optional: true });
+    const unit = requireText(item.unit, `items[${index}].unit`, 32, { optional: true }) || 'Đơn vị';
+    const discountRaw = item.discount_percent === undefined || item.discount_percent === null || item.discount_percent === '' ? '0' : String(item.discount_percent);
+    const discount = requireDecimal(discountRaw, `items[${index}].discount_percent`);
+    if (Number(discount) < 0 || Number(discount) > 100) {
+      throw new AppError(400, 'VALIDATION_ERROR', `items[${index}].discount_percent must be between 0 and 100.`);
+    }
     return {
+      sku: sku || null,
       description: requireText(item.description, `items[${index}].description`, 500),
+      unit,
       quantity: requireDecimal(item.quantity, `items[${index}].quantity`, DECIMAL_3),
-      unit_price: requireDecimal(item.unit_price, `items[${index}].unit_price`)
+      unit_price: requireDecimal(item.unit_price, `items[${index}].unit_price`),
+      discount_percent: discount
     };
   });
 }

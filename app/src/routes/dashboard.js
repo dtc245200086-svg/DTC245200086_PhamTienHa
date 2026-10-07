@@ -8,14 +8,14 @@ function dashboardRouter(pool) {
     const [totals, statuses, overdue] = await Promise.all([
       pool.query(
         `SELECT
-           coalesce((SELECT sum(amount) FROM public.payments), 0)::numeric(14, 2)::text AS collected,
-           coalesce((SELECT sum(total - paid_total) FROM public.invoices
+           coalesce((SELECT sum(amount) FROM public.payments WHERE method IN ('CASH', 'BANK_TRANSFER', 'CARD')), 0)::numeric(14, 2)::text AS collected,
+           coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
              WHERE status IN ('ISSUED', 'PARTIALLY_PAID')), 0)::numeric(14, 2)::text AS outstanding`
       ),
       pool.query('SELECT status, count(*)::text AS count FROM public.invoices GROUP BY status'),
       pool.query(
         `SELECT count(*)::text AS count FROM public.invoices
-         WHERE due_date < current_date AND status IN ('ISSUED', 'PARTIALLY_PAID')`
+         WHERE due_date < current_date AND status IN ('ISSUED', 'PARTIALLY_PAID') AND (total - paid_total - adjusted_total) > 0`
       )
     ]);
     const byStatus = Object.fromEntries(statuses.rows.map((row) => [row.status, row.count]));

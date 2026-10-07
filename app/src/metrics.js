@@ -47,7 +47,36 @@ const routeTemplates = [
   ['POST', /^\/api\/invoices\/\d+\/(?:issue|cancel)\/?$/, null],
   ['POST', /^\/api\/invoices\/\d+\/payments\/?$/, '/api/invoices/:id/payments'],
   ['GET', /^\/api\/payments\/?$/, '/api/payments'],
-  ['GET', /^\/api\/dashboard\/summary\/?$/, '/api/dashboard/summary']
+  ['POST', /^\/api\/payments\/allocate\/?$/, '/api/payments/allocate'],
+  ['GET', /^\/api\/dashboard\/summary\/?$/, '/api/dashboard/summary'],
+  ['GET', /^\/api\/products\/?$/, '/api/products/'],
+  ['POST', /^\/api\/products\/?$/, '/api/products/'],
+  ['GET', /^\/api\/products\/\d+\/?$/, '/api/products/:id'],
+  ['PUT', /^\/api\/products\/\d+\/?$/, '/api/products/:id'],
+  ['DELETE', /^\/api\/products\/\d+\/?$/, '/api/products/:id'],
+  ['GET', /^\/api\/payment-terms\/?$/, '/api/payment-terms'],
+  ['POST', /^\/api\/payment-terms\/?$/, '/api/payment-terms'],
+  ['GET', /^\/api\/payment-terms\/\d+\/?$/, '/api/payment-terms/:id'],
+  ['PUT', /^\/api\/payment-terms\/\d+\/?$/, '/api/payment-terms/:id'],
+  ['POST', /^\/api\/payment-terms\/\d+\/default\/?$/, '/api/payment-terms/:id/default'],
+  ['DELETE', /^\/api\/payment-terms\/\d+\/?$/, '/api/payment-terms/:id'],
+  ['GET', /^\/api\/reports\/(?:aging|collection-metrics|revenue|vat)\/?$/, null],
+  ['GET', /^\/api\/adjustments\/?$/, '/api/adjustments'],
+  ['POST', /^\/api\/adjustments\/?$/, '/api/adjustments'],
+  ['GET', /^\/api\/adjustments\/\d+\/?$/, '/api/adjustments/:id'],
+  ['POST', /^\/api\/adjustments\/\d+\/(?:approve|process)\/?$/, null],
+  ['GET', /^\/api\/recurring-plans\/?$/, '/api/recurring-plans'],
+  ['POST', /^\/api\/recurring-plans\/?$/, '/api/recurring-plans'],
+  ['GET', /^\/api\/recurring-plans\/\d+\/?$/, '/api/recurring-plans/:id'],
+  ['POST', /^\/api\/recurring-plans\/\d+\/(?:trigger|toggle-status)\/?$/, null],
+  ['GET', /^\/api\/bank-transactions\/?$/, '/api/bank-transactions'],
+  ['POST', /^\/api\/bank-transactions\/?$/, '/api/bank-transactions'],
+  ['POST', /^\/api\/reconciliation\/(?:auto-match|manual-match)\/?$/, null],
+  ['GET', /^\/api\/rbac\/(?:roles|permissions)\/?$/, null],
+  ['GET', /^\/api\/audit-logs\/?$/, '/api/audit-logs'],
+  ['POST', /^\/api\/audit-logs\/verify\/?$/, '/api/audit-logs/verify'],
+  ['GET', /^\/api\/settings\/?$/, '/api/settings'],
+  ['PUT', /^\/api\/settings\/?$/, '/api/settings']
 ];
 
 function getRouteTemplate(method, originalUrl) {
@@ -55,9 +84,7 @@ function getRouteTemplate(method, originalUrl) {
   const match = routeTemplates.find(([routeMethod, pattern]) => routeMethod === method && pattern.test(pathname));
   if (!match) return 'unmatched';
   if (match[2]) return match[2];
-  return pathname.startsWith('/api/auth/')
-    ? `/api/auth${pathname.endsWith('/logout') ? '/logout' : '/login'}`
-    : `/api/invoices/:id${pathname.endsWith('/cancel') ? '/cancel' : '/issue'}`;
+  return pathname.replace(/\/\d+/g, '/:id');
 }
 
 module.exports = {
