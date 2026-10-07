@@ -27,6 +27,9 @@ function paymentsRouter(pool) {
 
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
 
+    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
+    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
+
     const result = await inTransaction(async (client) => {
       return await PaymentService.createPayment(client, {
         invoiceId,
@@ -38,38 +41,44 @@ function paymentsRouter(pool) {
         bankAccount,
         notes,
         recordedBy: req.user.id,
-        allocations: [{ invoiceId, amount }]
+        allocations: [{ invoiceId, amount }],
+        idempotencyKey
       });
     });
 
-    paymentsAmountVnd.inc(Number(result.payment.amount));
+    if (!result.is_idempotent_replay) {
+      paymentsAmountVnd.inc(Number(result.payment.amount));
 
-    writeLog('info', 'payment.recorded', {
-      request_id: req.requestId,
-      user: req.user.username,
-      invoice_id: invoiceId,
-      payment_id: result.payment.id
-    });
+      writeLog('info', 'payment.recorded', {
+        request_id: req.requestId,
+        user: req.user.username,
+        invoice_id: invoiceId,
+        payment_id: result.payment.id
+      });
 
-    const targetInvoice = result.updated_invoices[0] || {};
+      const targetInvoice = result.updated_invoices[0] || {};
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'payments',
-      action: 'PAYMENT_RECORDED',
-      targetRef: targetInvoice.invoice_no || `#${invoiceId}`,
-      severity: 'INFO',
-      summary: `Ghi nhận thanh toán ${result.payment.amount} ₫ cho hóa đơn ${targetInvoice.invoice_no || `#${invoiceId}`} (${result.payment.method})`,
-      metadata: result.payment
-    });
+      await recordAudit(pool, {
+        user: req.user,
+        ip: req.ip,
+        module: 'payments',
+        action: 'PAYMENT_RECORDED',
+        targetRef: targetInvoice.invoice_no || `#${invoiceId}`,
+        severity: 'INFO',
+        summary: `Ghi nhận thanh toán ${result.payment.amount} ₫ cho hóa đơn ${targetInvoice.invoice_no || `#${invoiceId}`} (${result.payment.method})`,
+        metadata: result.payment
+      });
+    }
 
-    res.status(201).json({
+    const targetInvoice = (result.updated_invoices && result.updated_invoices[0]) || {};
+
+    res.status(result.is_idempotent_replay ? 200 : 201).json({
       payment: result.payment,
       invoice: targetInvoice,
       allocations: result.allocations,
       allocated_total: result.allocated_total,
-      unapplied_amount: result.unapplied_amount
+      unapplied_amount: result.unapplied_amount,
+      is_idempotent_replay: Boolean(result.is_idempotent_replay)
     });
   }));
 
@@ -89,6 +98,9 @@ function paymentsRouter(pool) {
 
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
 
+    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
+    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
+
     const result = await inTransaction(async (client) => {
       return await PaymentService.createPayment(client, {
         customerId,
@@ -101,24 +113,27 @@ function paymentsRouter(pool) {
         bankAccount,
         notes,
         recordedBy: req.user.id,
-        allocations
+        allocations,
+        idempotencyKey
       });
     });
 
-    paymentsAmountVnd.inc(Number(result.payment.amount));
+    if (!result.is_idempotent_replay) {
+      paymentsAmountVnd.inc(Number(result.payment.amount));
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'payments',
-      action: 'PAYMENT_CREATED',
-      targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
-      severity: 'INFO',
-      summary: `Tạo khoản thanh toán ${result.payment.amount} ₫ (${result.payment.method}) - Đã phân bổ: ${result.allocated_total} ₫, Tiền chưa phân bổ: ${result.unapplied_amount} ₫`,
-      metadata: result.payment
-    });
+      await recordAudit(pool, {
+        user: req.user,
+        ip: req.ip,
+        module: 'payments',
+        action: 'PAYMENT_CREATED',
+        targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
+        severity: 'INFO',
+        summary: `Tạo khoản thanh toán ${result.payment.amount} ₫ (${result.payment.method}) - Đã phân bổ: ${result.allocated_total} ₫, Tiền chưa phân bổ: ${result.unapplied_amount} ₫`,
+        metadata: result.payment
+      });
+    }
 
-    res.status(201).json(result);
+    res.status(result.is_idempotent_replay ? 200 : 201).json(result);
   }));
 
   // POST /api/payments/:id/allocations (Allocate unapplied cash of existing payment)
@@ -130,31 +145,40 @@ function paymentsRouter(pool) {
       throw new AppError(400, 'VALIDATION_ERROR', 'allocations array is required and must not be empty.');
     }
 
+    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
+    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
+
     const result = await inTransaction(async (client) => {
       return await PaymentService.allocatePayment(client, {
         paymentId,
         allocations,
-        recordedBy: req.user.id
+        recordedBy: req.user.id,
+        idempotencyKey
       });
     });
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'payments',
-      action: 'PAYMENT_ALLOCATED',
-      targetRef: `#PAY-${paymentId}`,
-      severity: 'INFO',
-      summary: `Phân bổ ${result.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
-      metadata: result
-    });
+    if (!result.is_idempotent_replay) {
+      await recordAudit(pool, {
+        user: req.user,
+        ip: req.ip,
+        module: 'payments',
+        action: 'PAYMENT_ALLOCATED',
+        targetRef: `#PAY-${paymentId}`,
+        severity: 'INFO',
+        summary: `Phân bổ ${result.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
+        metadata: result
+      });
+    }
 
-    res.status(201).json(result);
+    res.status(result.is_idempotent_replay ? 200 : 201).json(result);
   }));
 
   // POST /api/payments/allocate (Multi-invoice payment allocation)
   router.post('/payments/allocate', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
     requireObject(req.body);
+
+    const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || (req.body && req.body.idempotency_key);
+    const idempotencyKey = rawKey ? String(rawKey).trim() : null;
 
     // If payment_id is provided, allocate existing payment
     if (req.body.payment_id) {
@@ -167,10 +191,11 @@ function paymentsRouter(pool) {
         return await PaymentService.allocatePayment(client, {
           paymentId,
           allocations,
-          recordedBy: req.user.id
+          recordedBy: req.user.id,
+          idempotencyKey
         });
       });
-      return res.status(201).json(result);
+      return res.status(result.is_idempotent_replay ? 200 : 201).json(result);
     }
 
     // Otherwise, create a new master payment and allocate across target invoices
@@ -201,24 +226,27 @@ function paymentsRouter(pool) {
         bankAccount,
         notes: `Phân bổ thanh toán đa hóa đơn cho khách hàng #${customerId}`,
         recordedBy: req.user.id,
-        allocations
+        allocations,
+        idempotencyKey
       });
     });
 
-    paymentsAmountVnd.inc(Number(totalAmount));
+    if (!result.is_idempotent_replay) {
+      paymentsAmountVnd.inc(Number(totalAmount));
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'payments',
-      action: 'PAYMENT_ALLOCATED',
-      targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
-      severity: 'INFO',
-      summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${result.allocations.length} hóa đơn`,
-      metadata: { total_amount: totalAmount, allocations: result.allocations }
-    });
+      await recordAudit(pool, {
+        user: req.user,
+        ip: req.ip,
+        module: 'payments',
+        action: 'PAYMENT_ALLOCATED',
+        targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
+        severity: 'INFO',
+        summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${result.allocations.length} hóa đơn`,
+        metadata: { total_amount: totalAmount, allocations: result.allocations }
+      });
+    }
 
-    res.status(201).json({
+    res.status(result.is_idempotent_replay ? 200 : 201).json({
       ...result,
       allocatedPayments: result.allocations,
       updatedInvoices: result.updated_invoices

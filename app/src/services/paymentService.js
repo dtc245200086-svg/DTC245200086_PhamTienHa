@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const { AppError } = require('../errors');
 
 const VALID_METHODS = new Set(['CASH', 'BANK_TRANSFER', 'CARD']);
@@ -10,12 +11,54 @@ function sortIds(ids) {
 }
 
 /**
+ * Compute a deterministic cryptographic fingerprint of payment creation parameters.
+ */
+function computePaymentRequestFingerprint(payload) {
+  const normalized = {
+    customerId: payload.customerId ? String(payload.customerId) : null,
+    invoiceId: payload.invoiceId ? String(payload.invoiceId) : null,
+    amount: Number(payload.amount).toFixed(2),
+    method: String(payload.method || '').toUpperCase().trim(),
+    paidAt: String(payload.paidAt || '').trim(),
+    reference: payload.reference ? String(payload.reference).trim() : null,
+    allocations: Array.isArray(payload.allocations)
+      ? payload.allocations
+          .map(a => ({
+            invoiceId: String(a.invoiceId || a.invoice_id),
+            amount: Number(a.amount).toFixed(2)
+          }))
+          .sort((a, b) => a.invoiceId.localeCompare(b.invoiceId))
+      : []
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+/**
+ * Compute a deterministic cryptographic fingerprint of allocation parameters.
+ */
+function computeAllocationRequestFingerprint(paymentId, allocations) {
+  const normalized = {
+    paymentId: String(paymentId),
+    allocations: Array.isArray(allocations)
+      ? allocations
+          .map(a => ({
+            invoiceId: String(a.invoiceId || a.invoice_id),
+            amount: Number(a.amount).toFixed(2)
+          }))
+          .sort((a, b) => a.invoiceId.localeCompare(b.invoiceId))
+      : []
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+/**
  * Core canonical service managing Payments, Allocations, and Unapplied Cash.
  */
 class PaymentService {
   /**
    * Create a new cash payment, with optional immediate allocations to one or more invoices.
    * If allocations are omitted or partial, remaining amount becomes unapplied cash.
+   * Supports transactional idempotency via Idempotency-Key.
    */
   static async createPayment(client, {
     customerId = null,
@@ -28,7 +71,8 @@ class PaymentService {
     bankAccount = null,
     notes = null,
     recordedBy,
-    allocations = []
+    allocations = [],
+    idempotencyKey = null
   }) {
     const paymentAmount = Number(amount);
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
@@ -53,6 +97,52 @@ class PaymentService {
       const invCheck = await client.query('SELECT customer_id FROM public.invoices WHERE id = $1', [firstInvId]);
       if (invCheck.rowCount > 0) {
         resolvedCustomerId = invCheck.rows[0].customer_id;
+      }
+    }
+
+    // 0. Idempotency Check & Advisory Lock
+    let cleanIdempotencyKey = null;
+    let requestHash = null;
+    if (idempotencyKey) {
+      cleanIdempotencyKey = String(idempotencyKey).trim();
+      if (cleanIdempotencyKey.length === 0 || cleanIdempotencyKey.length > 255) {
+        throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must be between 1 and 255 characters.');
+      }
+
+      requestHash = computePaymentRequestFingerprint({
+        customerId: resolvedCustomerId,
+        invoiceId,
+        amount: paymentAmount,
+        method: cleanMethod,
+        paidAt,
+        reference,
+        allocations: effectiveAllocations
+      });
+
+      // Acquire 64-bit transaction-level advisory lock on idempotency key
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext('idemp_payment'), hashtext($1))`,
+        [cleanIdempotencyKey]
+      );
+
+      // Check if key already processed and committed
+      const existingKeyRes = await client.query(
+        `SELECT id, idempotency_key, request_hash, payment_id, response_status, response_body
+         FROM public.payment_idempotency_keys
+         WHERE idempotency_key = $1`,
+        [cleanIdempotencyKey]
+      );
+
+      if (existingKeyRes.rowCount > 0) {
+        const keyRow = existingKeyRes.rows[0];
+        if (keyRow.request_hash !== requestHash) {
+          throw new AppError(409, 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+            `Idempotency-Key '${cleanIdempotencyKey}' was already used with a different request payload.`);
+        }
+        return {
+          ...keyRow.response_body,
+          is_idempotent_replay: true
+        };
       }
     }
 
@@ -93,12 +183,27 @@ class PaymentService {
     const totalAllocated = appliedAllocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
     const unappliedAmount = Math.max(0, Math.round((paymentAmount - totalAllocated) * 100) / 100);
 
-    return {
+    const resultPayload = {
       payment: paymentRow,
       allocations: appliedAllocations,
       allocated_total: totalAllocated.toFixed(2),
       unapplied_amount: unappliedAmount.toFixed(2),
       updated_invoices: updatedInvoices
+    };
+
+    // 3. Persist idempotency key mapping if provided
+    if (cleanIdempotencyKey) {
+      await client.query(
+        `INSERT INTO public.payment_idempotency_keys
+          (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
+         VALUES ($1, $2, $3, 201, $4, $5)`,
+        [cleanIdempotencyKey, requestHash, paymentRow.id, JSON.stringify(resultPayload), recordedBy]
+      );
+    }
+
+    return {
+      ...resultPayload,
+      is_idempotent_replay: false
     };
   }
 
@@ -109,10 +214,47 @@ class PaymentService {
   static async allocatePayment(client, {
     paymentId,
     allocations = [],
-    recordedBy
+    recordedBy,
+    idempotencyKey = null
   }) {
     if (!Array.isArray(allocations) || allocations.length === 0) {
       throw new AppError(400, 'VALIDATION_ERROR', 'allocations array must not be empty.');
+    }
+
+    // 0. Idempotency Check & Advisory Lock for allocations
+    let cleanIdempotencyKey = null;
+    let requestHash = null;
+    if (idempotencyKey) {
+      cleanIdempotencyKey = String(idempotencyKey).trim();
+      if (cleanIdempotencyKey.length === 0 || cleanIdempotencyKey.length > 255) {
+        throw new AppError(400, 'INVALID_IDEMPOTENCY_KEY', 'Idempotency key must be between 1 and 255 characters.');
+      }
+
+      requestHash = computeAllocationRequestFingerprint(paymentId, allocations);
+
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext('idemp_alloc'), hashtext($1))`,
+        [cleanIdempotencyKey]
+      );
+
+      const existingKeyRes = await client.query(
+        `SELECT id, idempotency_key, request_hash, payment_id, response_status, response_body
+         FROM public.payment_idempotency_keys
+         WHERE idempotency_key = $1`,
+        [cleanIdempotencyKey]
+      );
+
+      if (existingKeyRes.rowCount > 0) {
+        const keyRow = existingKeyRes.rows[0];
+        if (keyRow.request_hash !== requestHash) {
+          throw new AppError(409, 'IDEMPOTENCY_KEY_PAYLOAD_MISMATCH',
+            `Idempotency-Key '${cleanIdempotencyKey}' was already used with a different request payload.`);
+        }
+        return {
+          ...keyRow.response_body,
+          is_idempotent_replay: true
+        };
+      }
     }
 
     // 1. Acquire transaction-level advisory lock on paymentId to serialize allocations and prevent concurrent over-allocation
@@ -230,7 +372,7 @@ class PaymentService {
     const newAllocatedTotal = currentlyAllocated + reqSum;
     const newUnapplied = Math.max(0, Math.round((paymentTotal - newAllocatedTotal) * 100) / 100);
 
-    return {
+    const resultPayload = {
       payment: {
         ...payment,
         allocated_total: newAllocatedTotal.toFixed(2),
@@ -238,6 +380,20 @@ class PaymentService {
       },
       allocations: insertedAllocations,
       updatedInvoices
+    };
+
+    if (cleanIdempotencyKey) {
+      await client.query(
+        `INSERT INTO public.payment_idempotency_keys
+          (idempotency_key, request_hash, payment_id, response_status, response_body, created_by)
+         VALUES ($1, $2, $3, 201, $4, $5)`,
+        [cleanIdempotencyKey, requestHash, paymentId, JSON.stringify(resultPayload), recordedBy]
+      );
+    }
+
+    return {
+      ...resultPayload,
+      is_idempotent_replay: false
     };
   }
 
