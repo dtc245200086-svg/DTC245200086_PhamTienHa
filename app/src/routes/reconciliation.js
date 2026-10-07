@@ -4,6 +4,7 @@ const { inTransaction } = require('../db');
 const { parseId, parsePage, requireDate, requireDecimal, requireObject, requireText } = require('../validation');
 const { requireAuth } = require('./auth');
 const { recordAudit } = require('../audit');
+const { PaymentService } = require('../services/paymentService');
 
 function reconciliationRouter(pool) {
   const router = express.Router();
@@ -115,23 +116,21 @@ function reconciliationRouter(pool) {
             ? `Khớp tự động sao kê ngân hàng (Đã khớp: ${payAmt} ₫, Tiền chưa phân bổ/thừa: ${unappliedAmt} ₫)`
             : 'Khớp tự động sao kê ngân hàng';
 
-          // Create payment
-          const payRes = await client.query(
-            `INSERT INTO public.payments (invoice_id, amount, method, paid_at, reference, bank_name, bank_account, notes, recorded_by)
-             VALUES ($1, $2::numeric, 'BANK_TRANSFER', $3, $4, $5, $6, $7, $8)
-             RETURNING id`,
-            [inv.id, payAmt, tx.tx_date, tx.reference, tx.bank_name, tx.bank_account, noteText, req.user.id]
-          );
-          const paymentId = payRes.rows[0].id;
-
-          // Update invoice
-          await client.query(
-            `UPDATE public.invoices
-             SET paid_total = paid_total + $2::numeric,
-                 status = CASE WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
-             WHERE id = $1`,
-            [inv.id, payAmt]
-          );
+          // Create canonical payment & allocation via PaymentService
+          const payResult = await PaymentService.createPayment(client, {
+            customerId: inv.customer_id,
+            invoiceId: inv.id,
+            amount: txAmt,
+            method: 'BANK_TRANSFER',
+            paidAt: tx.tx_date,
+            reference: tx.reference || `BANK-TX-${tx.id}`,
+            bankName: tx.bank_name,
+            bankAccount: tx.bank_account,
+            notes: noteText,
+            recordedBy: req.user.id,
+            allocations: [{ invoiceId: inv.id, amount: payAmt }]
+          });
+          const paymentId = payResult.payment.id;
 
           // Mark bank transaction as matched / partially matched with unapplied_amount
           const newStatus = Number(unappliedAmt) > 0 ? 'PARTIALLY_MATCHED' : 'MATCHED';
@@ -207,23 +206,21 @@ function reconciliationRouter(pool) {
         ? `Khớp thủ công sao kê ngân hàng (Đã khớp: ${payAmt} ₫, Tiền chưa phân bổ/thừa: ${unappliedAmt} ₫)`
         : 'Khớp thủ công sao kê ngân hàng';
 
-      // Create payment
-      const payRes = await client.query(
-        `INSERT INTO public.payments (invoice_id, amount, method, paid_at, reference, bank_name, bank_account, notes, recorded_by)
-         VALUES ($1, $2::numeric, 'BANK_TRANSFER', $3, $4, $5, $6, $7, $8)
-         RETURNING id`,
-        [invoiceId, payAmt, tx.tx_date, tx.reference, tx.bank_name, tx.bank_account, noteText, req.user.id]
-      );
-      const paymentId = payRes.rows[0].id;
-
-      // Update invoice
-      await client.query(
-        `UPDATE public.invoices
-         SET paid_total = paid_total + $2::numeric,
-             status = CASE WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
-         WHERE id = $1`,
-        [invoiceId, payAmt]
-      );
+      // Create canonical payment & allocation via PaymentService
+      const payResult = await PaymentService.createPayment(client, {
+        customerId: inv.customer_id,
+        invoiceId: invoiceId,
+        amount: txAmt,
+        method: 'BANK_TRANSFER',
+        paidAt: tx.tx_date,
+        reference: tx.reference || `BANK-TX-${txId}`,
+        bankName: tx.bank_name,
+        bankAccount: tx.bank_account,
+        notes: noteText,
+        recordedBy: req.user.id,
+        allocations: [{ invoiceId, amount: payAmt }]
+      });
+      const paymentId = payResult.payment.id;
 
       // Update bank transaction with unapplied amount
       const newStatus = Number(unappliedAmt) > 0 ? 'PARTIALLY_MATCHED' : 'MATCHED';

@@ -164,8 +164,8 @@ function customerRouter(pool) {
       pool.query(
         `SELECT p.id, p.amount::text, p.method, p.paid_at, p.reference, p.bank_name
          FROM public.payments p
-         JOIN public.invoices i ON i.id = p.invoice_id
-         WHERE i.customer_id = $1 ORDER BY p.paid_at DESC LIMIT 10`,
+         WHERE (p.customer_id = $1 OR p.id IN (SELECT payment_id FROM public.payment_allocations pa JOIN public.invoices inv ON inv.id = pa.invoice_id WHERE inv.customer_id = $1))
+         ORDER BY p.paid_at DESC, p.id DESC LIMIT 10`,
         [id]
       )
     ]);

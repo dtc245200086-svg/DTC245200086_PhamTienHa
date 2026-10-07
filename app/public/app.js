@@ -1045,22 +1045,29 @@ async function renderInvoicePrint(content, invoiceId) {
 // ---------------- PAYMENTS ----------------
 async function renderPayments(content) {
   const result = await api('/payments?limit=100');
-  content.append(pageHeading('Lịch sử thanh toán', 'Theo dõi và quản lý mọi dòng tiền thu vào hệ thống.'));
+  content.append(pageHeading('Lịch sử thanh toán & Phân bổ tiền (Payment Allocation V2)', 'Theo dõi mọi dòng tiền thu vào, quản lý phân bổ đa hóa đơn và tiền chưa phân bổ (Unapplied Cash).'));
 
   const rows = result.items.map((payment) => {
     const row = node('tr');
+    const unappliedNum = Number(payment.unapplied_amount || 0);
+    const unappliedBadge = unappliedNum > 0
+      ? node('span', 'badge badge-warning', money(payment.unapplied_amount))
+      : node('span', 'text-muted', '0 ₫');
+
     row.append(
       node('td', '', dateText(payment.paid_at)),
-      node('td', '', payment.invoice_no || `#${payment.invoice_id}`),
+      node('td', '', payment.customer_name || 'Khách vãng lai'),
       node('td', '', payment.method),
-      node('td', '', money(payment.amount)),
+      node('td', 'text-bold', money(payment.amount)),
+      node('td', 'text-success', money(payment.allocated_amount || payment.amount)),
+      node('td', '', unappliedBadge),
       node('td', '', payment.bank_name ? `${payment.bank_name} (${payment.bank_account || ''})` : '—'),
       node('td', 'code-preview', payment.reference || '—')
     );
     return row;
   });
 
-  content.append(panel('Khoản thanh toán ghi nhận', table(['Ngày thanh toán', 'Hóa đơn đối ứng', 'Phương thức', 'Số tiền', 'Ngân hàng', 'Mã tham chiếu'], rows)));
+  content.append(panel('Khoản thanh toán ghi nhận', table(['Ngày thanh toán', 'Khách hàng', 'Phương thức', 'Tổng tiền thu', 'Đã phân bổ', 'Chưa phân bổ (Unapplied)', 'Ngân hàng', 'Mã tham chiếu'], rows)));
 }
 
 // ---------------- ADJUSTMENTS & CREDIT NOTES ----------------

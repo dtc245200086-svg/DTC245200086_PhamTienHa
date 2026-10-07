@@ -6,13 +6,14 @@ const { parseId, parsePage, requireDate, requireDecimal, requireObject, requireT
 const { requireAuth, requirePermission } = require('./auth');
 const { paymentsAmountVnd } = require('../metrics');
 const { recordAudit } = require('../audit');
+const { PaymentService } = require('../services/paymentService');
 
 const METHODS = new Set(['CASH', 'BANK_TRANSFER', 'CARD']);
 
 function paymentsRouter(pool) {
   const router = express.Router();
 
-  // POST /api/invoices/:id/payments
+  // POST /api/invoices/:id/payments (Pay specific invoice)
   router.post('/invoices/:id/payments', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
     const invoiceId = parseId(req.params.id);
     requireObject(req.body);
@@ -27,51 +28,18 @@ function paymentsRouter(pool) {
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
 
     const result = await inTransaction(async (client) => {
-      const locked = await client.query(
-        `SELECT id, invoice_no, status, total::text, paid_total::text, adjusted_total::text
-         FROM public.invoices WHERE id = $1 FOR UPDATE`,
-        [invoiceId]
-      );
-      if (!locked.rowCount) throw new AppError(404, 'INVOICE_NOT_FOUND', 'Invoice was not found.');
-      const invoice = locked.rows[0];
-      if (!['ISSUED', 'PARTIALLY_PAID'].includes(invoice.status)) {
-        throw new AppError(409, 'INVOICE_NOT_PAYABLE', 'Only ISSUED or PARTIALLY_PAID invoices can receive payments.');
-      }
-
-      const validAmount = await client.query(
-        `SELECT $1::numeric > 0 AS positive,
-           $1::numeric <= ($2::numeric - $3::numeric - $4::numeric) AS within_outstanding`,
-        [amount, invoice.total, invoice.paid_total, invoice.adjusted_total || '0']
-      );
-      if (!validAmount.rows[0].positive) throw new AppError(400, 'INVALID_PAYMENT_AMOUNT', 'Payment amount must be greater than zero.');
-      if (!validAmount.rows[0].within_outstanding) {
-        throw new AppError(409, 'PAYMENT_EXCEEDS_OUTSTANDING', 'Payment cannot exceed the outstanding balance.');
-      }
-
-      const payment = await client.query(
-        `INSERT INTO public.payments (invoice_id, amount, method, paid_at, reference, bank_name, bank_account, notes, recorded_by)
-         VALUES ($1, $2::numeric, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id, invoice_id, amount::text, method, paid_at, reference, bank_name, bank_account, notes, recorded_by, created_at`,
-        [invoiceId, amount, method, paidAt, reference, bankName, bankAccount, notes, req.user.id]
-      );
-      const paymentRow = payment.rows[0];
-
-      // Insert matching record into payment_allocations
-      await client.query(
-        `INSERT INTO public.payment_allocations (payment_id, invoice_id, allocated_amount)
-         VALUES ($1, $2, $3::numeric)`,
-        [paymentRow.id, invoiceId, amount]
-      );
-
-      const updated = await client.query(
-        `UPDATE public.invoices
-         SET paid_total = paid_total + $2::numeric,
-             status = CASE WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
-         WHERE id = $1
-         RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text`,
-        [invoiceId, amount]
-      );
-      return { payment: paymentRow, invoice: updated.rows[0] };
+      return await PaymentService.createPayment(client, {
+        invoiceId,
+        amount,
+        method,
+        paidAt,
+        reference,
+        bankName,
+        bankAccount,
+        notes,
+        recordedBy: req.user.id,
+        allocations: [{ invoiceId, amount }]
+      });
     });
 
     paymentsAmountVnd.inc(Number(result.payment.amount));
@@ -83,56 +51,129 @@ function paymentsRouter(pool) {
       payment_id: result.payment.id
     });
 
+    const targetInvoice = result.updated_invoices[0] || {};
+
     await recordAudit(pool, {
       user: req.user,
       ip: req.ip,
       module: 'payments',
       action: 'PAYMENT_RECORDED',
-      targetRef: result.invoice.invoice_no || `#${invoiceId}`,
+      targetRef: targetInvoice.invoice_no || `#${invoiceId}`,
       severity: 'INFO',
-      summary: `Ghi nhận thanh toán ${result.payment.amount} ₫ cho hóa đơn ${result.invoice.invoice_no} (${result.payment.method})`,
+      summary: `Ghi nhận thanh toán ${result.payment.amount} ₫ cho hóa đơn ${targetInvoice.invoice_no || `#${invoiceId}`} (${result.payment.method})`,
+      metadata: result.payment
+    });
+
+    res.status(201).json({
+      payment: result.payment,
+      invoice: targetInvoice,
+      allocations: result.allocations,
+      allocated_total: result.allocated_total,
+      unapplied_amount: result.unapplied_amount
+    });
+  }));
+
+  // POST /api/payments (Direct payment creation with optional multi-allocation or unapplied cash)
+  router.post('/payments', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    requireObject(req.body);
+    const customerId = req.body.customer_id ? parseId(req.body.customer_id, 'customer_id') : null;
+    const invoiceId = req.body.invoice_id ? parseId(req.body.invoice_id, 'invoice_id') : null;
+    const amount = requireDecimal(req.body.amount || req.body.total_amount, 'amount');
+    const method = requireText(req.body.method, 'method', 24);
+    const paidAt = requireDate(req.body.paid_at || new Date().toISOString().slice(0, 10), 'paid_at');
+    const reference = requireText(req.body.reference, 'reference', 120, { optional: true });
+    const bankName = requireText(req.body.bank_name, 'bank_name', 100, { optional: true });
+    const bankAccount = requireText(req.body.bank_account, 'bank_account', 50, { optional: true });
+    const notes = requireText(req.body.notes, 'notes', 1000, { optional: true });
+    const allocations = Array.isArray(req.body.allocations) ? req.body.allocations : [];
+
+    if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
+
+    const result = await inTransaction(async (client) => {
+      return await PaymentService.createPayment(client, {
+        customerId,
+        invoiceId,
+        amount,
+        method,
+        paidAt,
+        reference,
+        bankName,
+        bankAccount,
+        notes,
+        recordedBy: req.user.id,
+        allocations
+      });
+    });
+
+    paymentsAmountVnd.inc(Number(result.payment.amount));
+
+    await recordAudit(pool, {
+      user: req.user,
+      ip: req.ip,
+      module: 'payments',
+      action: 'PAYMENT_CREATED',
+      targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
+      severity: 'INFO',
+      summary: `Tạo khoản thanh toán ${result.payment.amount} ₫ (${result.payment.method}) - Đã phân bổ: ${result.allocated_total} ₫, Tiền chưa phân bổ: ${result.unapplied_amount} ₫`,
       metadata: result.payment
     });
 
     res.status(201).json(result);
   }));
 
-  // GET /api/payments
-  router.get('/payments', requireAuth, requirePermission('payment.read'), asyncRoute(async (req, res) => {
-    const { page, limit, offset } = parsePage(req.query);
-    const invoiceId = req.query.invoice_id ? parseId(req.query.invoice_id, 'invoice_id') : null;
-    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
-    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
-    const [items, count] = await Promise.all([
-      pool.query(
-        `SELECT payment.id, payment.invoice_id, invoice.invoice_no, customer.name AS customer_name,
-           payment.amount::text, payment.method, payment.paid_at, payment.reference,
-           payment.bank_name, payment.bank_account, payment.notes,
-           payment.recorded_by, u.username AS recorded_by_username, payment.created_at
-         FROM public.payments AS payment
-         JOIN public.invoices AS invoice ON invoice.id = payment.invoice_id
-         JOIN public.customers AS customer ON customer.id = invoice.customer_id
-         LEFT JOIN public.users AS u ON u.id = payment.recorded_by
-         WHERE ($1::bigint IS NULL OR payment.invoice_id = $1)
-           AND ($2::date IS NULL OR payment.paid_at >= $2)
-           AND ($3::date IS NULL OR payment.paid_at <= $3)
-         ORDER BY payment.paid_at DESC, payment.id DESC LIMIT $4 OFFSET $5`,
-        [invoiceId, from, to, limit, offset]
-      ),
-      pool.query(
-        `SELECT count(*)::text AS total FROM public.payments AS payment
-         WHERE ($1::bigint IS NULL OR payment.invoice_id = $1)
-           AND ($2::date IS NULL OR payment.paid_at >= $2)
-           AND ($3::date IS NULL OR payment.paid_at <= $3)`,
-        [invoiceId, from, to]
-      )
-    ]);
-    res.json({ items: items.rows, total: count.rows[0].total, page, limit });
+  // POST /api/payments/:id/allocations (Allocate unapplied cash of existing payment)
+  router.post('/payments/:id/allocations', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
+    const paymentId = parseId(req.params.id);
+    requireObject(req.body);
+    const allocations = req.body.allocations;
+    if (!Array.isArray(allocations) || allocations.length === 0) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'allocations array is required and must not be empty.');
+    }
+
+    const result = await inTransaction(async (client) => {
+      return await PaymentService.allocatePayment(client, {
+        paymentId,
+        allocations,
+        recordedBy: req.user.id
+      });
+    });
+
+    await recordAudit(pool, {
+      user: req.user,
+      ip: req.ip,
+      module: 'payments',
+      action: 'PAYMENT_ALLOCATED',
+      targetRef: `#PAY-${paymentId}`,
+      severity: 'INFO',
+      summary: `Phân bổ ${result.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
+      metadata: result
+    });
+
+    res.status(201).json(result);
   }));
 
-  // POST /api/payments/allocate (Multi-invoice payment allocation with exact invoice history)
+  // POST /api/payments/allocate (Multi-invoice payment allocation)
   router.post('/payments/allocate', requireAuth, requirePermission('payment.create'), asyncRoute(async (req, res) => {
     requireObject(req.body);
+
+    // If payment_id is provided, allocate existing payment
+    if (req.body.payment_id) {
+      const paymentId = parseId(req.body.payment_id, 'payment_id');
+      const allocations = req.body.allocations;
+      if (!Array.isArray(allocations) || allocations.length === 0) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'allocations array is required.');
+      }
+      const result = await inTransaction(async (client) => {
+        return await PaymentService.allocatePayment(client, {
+          paymentId,
+          allocations,
+          recordedBy: req.user.id
+        });
+      });
+      return res.status(201).json(result);
+    }
+
+    // Otherwise, create a new master payment and allocate across target invoices
     const customerId = parseId(req.body.customer_id, 'customer_id');
     const totalAmount = requireDecimal(req.body.total_amount || req.body.amount, 'total_amount');
     const method = requireText(req.body.method, 'method', 24);
@@ -150,100 +191,18 @@ function paymentsRouter(pool) {
     }
 
     const result = await inTransaction(async (client) => {
-      let sumAllocated = 0;
-      const validatedAllocations = [];
-
-      for (const alloc of allocations) {
-        const invId = parseId(alloc.invoice_id, 'allocations.invoice_id');
-        const allocAmt = requireDecimal(alloc.amount, 'allocations.amount');
-        const numAmt = Number(allocAmt);
-        if (numAmt <= 0) throw new AppError(400, 'INVALID_PAYMENT_AMOUNT', 'Allocated amount must be positive.');
-        sumAllocated += numAmt;
-        validatedAllocations.push({ invoiceId: invId, amount: allocAmt, numAmt });
-      }
-
-      if (Math.abs(sumAllocated - Number(totalAmount)) > 0.01) {
-        throw new AppError(400, 'ALLOCATION_SUM_MISMATCH', 'The sum of allocated amounts must match total_amount exactly.');
-      }
-
-      const allocatedPayments = [];
-      const updatedInvoices = [];
-
-      // Process each invoice allocation individually so payment history is exact per invoice
-      for (const item of validatedAllocations) {
-        const locked = await client.query(
-          `SELECT id, invoice_no, customer_id, status, total::text, paid_total::text, adjusted_total::text
-           FROM public.invoices WHERE id = $1 FOR UPDATE`,
-          [item.invoiceId]
-        );
-        if (!locked.rowCount) throw new AppError(404, 'INVOICE_NOT_FOUND', `Invoice ${item.invoiceId} was not found.`);
-        const inv = locked.rows[0];
-        if (Number(inv.customer_id) !== customerId) {
-          throw new AppError(400, 'CUSTOMER_MISMATCH', `Invoice ${inv.invoice_no} does not belong to customer ${customerId}.`);
-        }
-        if (!['ISSUED', 'PARTIALLY_PAID'].includes(inv.status)) {
-          throw new AppError(409, 'INVOICE_NOT_PAYABLE', `Invoice ${inv.invoice_no} is not in payable state.`);
-        }
-
-        const validAmt = await client.query(
-          `SELECT $1::numeric <= ($2::numeric - $3::numeric - $4::numeric) AS within_outstanding`,
-          [item.amount, inv.total, inv.paid_total, inv.adjusted_total || '0']
-        );
-        if (!validAmt.rows[0].within_outstanding) {
-          throw new AppError(409, 'PAYMENT_EXCEEDS_OUTSTANDING', `Allocated amount for invoice ${inv.invoice_no} exceeds outstanding balance.`);
-        }
-
-        // Insert separate payment row for this invoice with exact allocated amount
-        const payRes = await client.query(
-          `INSERT INTO public.payments (invoice_id, amount, method, paid_at, reference, bank_name, bank_account, notes, recorded_by)
-           VALUES ($1, $2::numeric, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING id, invoice_id, amount::text, method, paid_at, reference, bank_name, bank_account, recorded_by, created_at`,
-          [
-            item.invoiceId,
-            item.amount,
-            method,
-            paidAt,
-            reference || `ALLOC-${item.invoiceId}`,
-            bankName,
-            bankAccount,
-            `Phân bổ từ khoản thanh toán tổng ${totalAmount} ₫ (GD: ${reference || 'N/A'})`,
-            req.user.id
-          ]
-        );
-        const paymentRow = payRes.rows[0];
-        allocatedPayments.push(paymentRow);
-
-        // Record allocation
-        await client.query(
-          `INSERT INTO public.payment_allocations (payment_id, invoice_id, allocated_amount)
-           VALUES ($1, $2, $3::numeric)`,
-          [paymentRow.id, item.invoiceId, item.amount]
-        );
-
-        // Update invoice balance & status
-        const updated = await client.query(
-          `UPDATE public.invoices
-           SET paid_total = paid_total + $2::numeric,
-               status = CASE WHEN paid_total + $2::numeric + adjusted_total >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
-           WHERE id = $1
-           RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text`,
-          [item.invoiceId, item.amount]
-        );
-        updatedInvoices.push(updated.rows[0]);
-      }
-
-      // Return composite primary payment object for backward compatibility
-      const primaryPayment = allocatedPayments[0] ? {
-        ...allocatedPayments[0],
+      return await PaymentService.createPayment(client, {
+        customerId,
         amount: totalAmount,
-        notes: `Phân bổ cho ${allocatedPayments.length} hóa đơn (Tổng: ${totalAmount} ₫)`
-      } : null;
-
-      return {
-        payment: primaryPayment,
-        allocatedPayments,
-        updatedInvoices
-      };
+        method,
+        paidAt,
+        reference,
+        bankName,
+        bankAccount,
+        notes: `Phân bổ thanh toán đa hóa đơn cho khách hàng #${customerId}`,
+        recordedBy: req.user.id,
+        allocations
+      });
     });
 
     paymentsAmountVnd.inc(Number(totalAmount));
@@ -253,16 +212,68 @@ function paymentsRouter(pool) {
       ip: req.ip,
       module: 'payments',
       action: 'PAYMENT_ALLOCATED',
-      targetRef: `ALLOC-${result.updatedInvoices.map(i => i.invoice_no).join(',')}`,
+      targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
       severity: 'INFO',
-      summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${result.updatedInvoices.length} hóa đơn`,
-      metadata: { total_amount: totalAmount, invoices: result.updatedInvoices.map((i) => i.invoice_no) }
+      summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${result.allocations.length} hóa đơn`,
+      metadata: { total_amount: totalAmount, allocations: result.allocations }
     });
 
     res.status(201).json({
       ...result,
-      allocations: result.allocatedPayments
+      allocatedPayments: result.allocations,
+      updatedInvoices: result.updated_invoices
     });
+  }));
+
+  // GET /api/payments
+  router.get('/payments', requireAuth, requirePermission('payment.read'), asyncRoute(async (req, res) => {
+    const { page, limit, offset } = parsePage(req.query);
+    const invoiceId = req.query.invoice_id ? parseId(req.query.invoice_id, 'invoice_id') : null;
+    const customerId = req.query.customer_id ? parseId(req.query.customer_id, 'customer_id') : null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+
+    const [items, count] = await Promise.all([
+      pool.query(
+        `SELECT payment.id, payment.customer_id, payment.invoice_id,
+           coalesce(customer.name, (SELECT name FROM public.customers WHERE id = payment.customer_id)) AS customer_name,
+           invoice.invoice_no,
+           payment.amount::text, payment.method, payment.paid_at, payment.reference,
+           payment.bank_name, payment.bank_account, payment.notes,
+           payment.recorded_by, u.username AS recorded_by_username, payment.created_at,
+           coalesce((SELECT sum(allocated_amount) FROM public.payment_allocations WHERE payment_id = payment.id), 0)::numeric(14, 2)::text AS allocated_amount,
+           (payment.amount - coalesce((SELECT sum(allocated_amount) FROM public.payment_allocations WHERE payment_id = payment.id), 0))::numeric(14, 2)::text AS unapplied_amount,
+           (SELECT count(*)::text FROM public.payment_allocations WHERE payment_id = payment.id) AS allocations_count
+         FROM public.payments AS payment
+         LEFT JOIN public.invoices AS invoice ON invoice.id = payment.invoice_id
+         LEFT JOIN public.customers AS customer ON customer.id = coalesce(payment.customer_id, invoice.customer_id)
+         LEFT JOIN public.users AS u ON u.id = payment.recorded_by
+         WHERE ($1::bigint IS NULL OR payment.invoice_id = $1 OR payment.id IN (SELECT payment_id FROM public.payment_allocations WHERE invoice_id = $1))
+           AND ($2::bigint IS NULL OR payment.customer_id = $2 OR customer.id = $2)
+           AND ($3::date IS NULL OR payment.paid_at >= $3)
+           AND ($4::date IS NULL OR payment.paid_at <= $4)
+         ORDER BY payment.paid_at DESC, payment.id DESC LIMIT $5 OFFSET $6`,
+        [invoiceId, customerId, from, to, limit, offset]
+      ),
+      pool.query(
+        `SELECT count(*)::text AS total FROM public.payments AS payment
+         LEFT JOIN public.invoices AS invoice ON invoice.id = payment.invoice_id
+         LEFT JOIN public.customers AS customer ON customer.id = coalesce(payment.customer_id, invoice.customer_id)
+         WHERE ($1::bigint IS NULL OR payment.invoice_id = $1 OR payment.id IN (SELECT payment_id FROM public.payment_allocations WHERE invoice_id = $1))
+           AND ($2::bigint IS NULL OR payment.customer_id = $2 OR customer.id = $2)
+           AND ($3::date IS NULL OR payment.paid_at >= $3)
+           AND ($4::date IS NULL OR payment.paid_at <= $4)`,
+        [invoiceId, customerId, from, to]
+      )
+    ]);
+    res.json({ items: items.rows, total: count.rows[0].total, page, limit });
+  }));
+
+  // GET /api/payments/:id
+  router.get('/payments/:id', requireAuth, requirePermission('payment.read'), asyncRoute(async (req, res) => {
+    const paymentId = parseId(req.params.id);
+    const payment = await PaymentService.getPaymentDetails(pool, paymentId);
+    res.json({ payment });
   }));
 
   return router;

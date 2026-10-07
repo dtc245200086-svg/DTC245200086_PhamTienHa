@@ -92,8 +92,12 @@ async function loadInvoice(pool, invoiceId) {
       [invoiceId]
     ),
     pool.query(
-      `SELECT id, amount::text, method, paid_at, reference, bank_name, bank_account, recorded_by, created_at
-       FROM public.payments WHERE invoice_id = $1 ORDER BY id`,
+      `SELECT pa.id AS allocation_id, p.id, pa.allocated_amount::text AS amount, p.method, p.paid_at,
+              p.reference, p.bank_name, p.bank_account, p.recorded_by, pa.created_at
+       FROM public.payment_allocations pa
+       JOIN public.payments p ON p.id = pa.payment_id
+       WHERE pa.invoice_id = $1
+       ORDER BY pa.id`,
       [invoiceId]
     ),
     pool.query(
