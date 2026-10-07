@@ -115,7 +115,7 @@ function createApp(pool, { sessionSecret, cookieSecure }) {
       }
     }
 
-    if (status >= 500) writeLog('error', 'error', { request_id: req.requestId, code });
+    if (status >= 500) writeLog('error', 'error', { request_id: req.requestId, code, message: error.message, stack: error.stack });
     res.status(status).json({ error: { code, message, request_id: req.requestId } });
   });
 

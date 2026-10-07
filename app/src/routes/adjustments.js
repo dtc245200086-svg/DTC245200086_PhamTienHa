@@ -203,7 +203,7 @@ function adjustmentsRouter(pool) {
     const result = await inTransaction(async (client) => {
       // 1. Lock adjustment
       const adjRes = await client.query(
-        `SELECT id, credit_note_no, original_invoice_id, adjustment_type, total_amount::text, status
+        `SELECT id, credit_note_no, original_invoice_id, adjustment_type, total_amount::text, status, reason
          FROM public.invoice_adjustments WHERE id = $1 FOR UPDATE`,
         [id]
       );
@@ -231,28 +231,65 @@ function adjustmentsRouter(pool) {
       const invTotal = Number(inv.total);
       const currentAdjusted = Number(inv.adjusted_total || 0);
 
-      // Financial validation: Credit note cannot exceed invoice total capacity
+      // Financial validation: Cumulative adjustments on invoice cannot exceed invoice total capacity
       if (currentAdjusted + adjAmount > invTotal) {
         throw new AppError(409, 'ADJUSTMENT_EXCEEDS_INVOICE_TOTAL',
           `Total adjustments (${(currentAdjusted + adjAmount).toFixed(2)} ₫) cannot exceed invoice total (${invTotal.toFixed(2)} ₫).`);
       }
 
-      // Calculate AR reduction vs Refund payable
-      const arReduction = Math.min(adjAmount, Math.max(0, outstanding));
-      const refundPayable = Math.max(0, adjAmount - outstanding);
+      // Calculate AR reduction vs Refund payable (P1.1 Domain Design)
+      const outstandingSafe = Math.max(0, outstanding);
+      const arReduction = Math.min(adjAmount, outstandingSafe);
+      const refundPayable = Math.max(0, Math.round((adjAmount - outstandingSafe) * 100) / 100);
 
       // 3. Update invoice adjusted_total and status (DO NOT insert into payments table!)
+      // P1.1: adjusted_total ONLY increases by arReduction so that (paid_total + adjusted_total <= total) invariant is strictly preserved!
       const updatedInvRes = await client.query(
         `UPDATE public.invoices
          SET adjusted_total = adjusted_total + $2::numeric,
              status = CASE WHEN paid_total + adjusted_total + $2::numeric >= total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
          WHERE id = $1
          RETURNING id, invoice_no, status, total::text, paid_total::text, adjusted_total::text,
-                   (total - paid_total - (adjusted_total + $2::numeric))::numeric(14, 2)::text AS outstanding`,
-        [inv.id, adj.total_amount]
+                   (total - paid_total - adjusted_total)::numeric(14, 2)::text AS outstanding`,
+        [inv.id, arReduction.toFixed(2)]
       );
 
-      // 4. Update adjustment status to PROCESSED
+      // 4. Create refund payable in public.refund_payables if refundPayable > 0 (P1.1 Refund Ledger)
+      let refundRecord = null;
+      if (refundPayable > 0) {
+        const refSeqRes = await client.query(
+          `SELECT format('REF-%s-%s', to_char(current_date, 'YYYY'),
+             lpad(nextval('public.refund_no_seq')::text, 4, '0')) AS refund_no`
+        );
+        const refundNo = refSeqRes.rows[0].refund_no;
+
+        const refundInsertRes = await client.query(
+          `INSERT INTO public.refund_payables
+            (refund_no, customer_id, invoice_id, adjustment_id, amount, currency, status, reason, notes, created_by, metadata)
+           VALUES ($1, $2, $3, $4, $5::numeric, 'VND', 'PENDING', $6, $7, $8, $9)
+           RETURNING id, refund_no, customer_id, invoice_id, adjustment_id, amount::text, currency, status, reason, notes, created_at`,
+          [
+            refundNo,
+            inv.customer_id,
+            inv.id,
+            adj.id,
+            refundPayable.toFixed(2),
+            adj.reason || 'Khoản tiền phải hoàn trả phát sinh từ Credit Note',
+            `Phát sinh từ Credit Note ${adj.credit_note_no} cho hóa đơn ${inv.invoice_no}`,
+            req.user.id,
+            JSON.stringify({
+              invoice_no: inv.invoice_no,
+              credit_note_no: adj.credit_note_no,
+              adjustment_amount: adj.total_amount,
+              ar_reduction: arReduction.toFixed(2),
+              outstanding_before: outstanding.toFixed(2)
+            })
+          ]
+        );
+        refundRecord = refundInsertRes.rows[0];
+      }
+
+      // 5. Update adjustment status to PROCESSED
       await client.query(
         `UPDATE public.invoice_adjustments SET status = 'PROCESSED' WHERE id = $1`,
         [id]
@@ -262,7 +299,8 @@ function adjustmentsRouter(pool) {
         adjustment: { ...adj, status: 'PROCESSED' },
         invoice: updatedInvRes.rows[0],
         ar_reduction: arReduction.toFixed(2),
-        refund_payable: refundPayable.toFixed(2)
+        refund_payable: refundPayable.toFixed(2),
+        refund: refundRecord
       };
     });
 
@@ -281,7 +319,8 @@ function adjustmentsRouter(pool) {
       adjustment: result.adjustment,
       invoice: result.invoice,
       ar_reduction: result.ar_reduction,
-      refund_payable: result.refund_payable
+      refund_payable: result.refund_payable,
+      refund: result.refund
     });
   }));
 

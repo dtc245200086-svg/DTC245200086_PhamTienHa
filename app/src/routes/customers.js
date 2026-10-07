@@ -64,9 +64,9 @@ function customerRouter(pool) {
         `SELECT c.id, c.code, c.name, c.email, c.phone, c.address, c.tax_code,
                 c.contact_person, c.segment, c.status, c.credit_limit::text,
                 c.payment_term_id, t.name AS payment_term_name, t.days AS payment_term_days,
-                coalesce((SELECT sum(total - paid_total) FROM public.invoices
+                coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
                           WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0)::numeric(14, 2)::text AS current_debt,
-                (c.credit_limit - coalesce((SELECT sum(total - paid_total) FROM public.invoices
+                (c.credit_limit - coalesce((SELECT sum(total - paid_total - adjusted_total) FROM public.invoices
                                            WHERE customer_id = c.id AND status IN ('ISSUED', 'PARTIALLY_PAID')), 0))::numeric(14, 2)::text AS available_credit,
                 (SELECT count(*)::text FROM public.invoices WHERE customer_id = c.id) AS invoices_count,
                 c.created_at

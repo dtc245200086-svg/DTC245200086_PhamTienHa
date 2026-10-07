@@ -85,7 +85,7 @@ async function loadInvoice(pool, invoiceId) {
     [invoiceId]
   );
   if (!invoiceResult.rowCount) throw new AppError(404, 'INVOICE_NOT_FOUND', 'Invoice was not found.');
-  const [items, payments, adjustments] = await Promise.all([
+  const [items, payments, adjustments, refunds] = await Promise.all([
     pool.query(
       `SELECT id, sku, description, unit, quantity::text, unit_price::text, discount_percent::text, line_total::text
        FROM public.invoice_items WHERE invoice_id = $1 ORDER BY id`,
@@ -100,13 +100,19 @@ async function loadInvoice(pool, invoiceId) {
       `SELECT id, credit_note_no, adjustment_type, total_amount::text, reason, status, created_at
        FROM public.invoice_adjustments WHERE original_invoice_id = $1 ORDER BY id`,
       [invoiceId]
+    ),
+    pool.query(
+      `SELECT id, refund_no, adjustment_id, amount::text, currency, status, reason, created_at
+       FROM public.refund_payables WHERE invoice_id = $1 ORDER BY id`,
+      [invoiceId]
     )
   ]);
   return {
     ...invoiceResult.rows[0],
     items: items.rows,
     payments: payments.rows,
-    adjustments: adjustments.rows
+    adjustments: adjustments.rows,
+    refunds: refunds.rows
   };
 }
 

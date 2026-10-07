@@ -8,6 +8,7 @@ const { productRouter } = require('./products');
 const { paymentTermsRouter } = require('./payment-terms');
 const { reportsRouter } = require('./reports');
 const { adjustmentsRouter } = require('./adjustments');
+const { refundsRouter } = require('./refunds');
 const { recurringRouter } = require('./recurring');
 const { reconciliationRouter } = require('./reconciliation');
 const { rbacRouter } = require('./rbac');
@@ -21,6 +22,8 @@ function apiRouter(pool, cookieSecure) {
   router.use('/invoices', invoiceRouter(pool));
   router.use(paymentsRouter(pool));
   router.use(dashboardRouter(pool));
+  router.use('/refunds', refundsRouter(pool));
+  router.use('/refund-payables', refundsRouter(pool));
 
   // Enterprise Modules from LedgerFlow (with full frontend & API contract compatibility)
   router.use('/products', productRouter(pool));
