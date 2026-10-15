@@ -1,0 +1,77 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: security_alerts
+    folder: Security
+    interval: 30s
+    rules:
+      - uid: billing_high_login_failure_rate
+        title: BillingHighLoginFailureRate
+        condition: C
+        data:
+          - refId: A
+            queryType: range
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              editorMode: code
+              expr: sum(count_over_time({service="web"} | json | msg="auth.login_failed" [5m]))
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                name: Expression
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [4]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                name: Expression
+                type: __expr__
+                uid: __expr__
+              expression: $B > 4
+              refId: C
+              type: math
+        noDataState: OK
+        execErrState: Error
+        for: 30s
+        annotations:
+          summary: "Phát hiện bất thường nhiều lần đăng nhập thất bại trên hệ thống Billing_One"
+          description: "Số lượng sự kiện auth.login_failed vượt ngưỡng an toàn (> 4 sự kiện trong 5 phút), nghi vấn tấn công dò mật khẩu (credential brute-force)."
+        labels:
+          severity: warning
+          category: security
