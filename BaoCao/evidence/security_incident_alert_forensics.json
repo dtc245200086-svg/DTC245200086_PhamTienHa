@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-10-13T15:23:50Z",
+  "incident": "Controlled Credential Brute-Force Testing on Staging/Local",
+  "endpoint": "https://127.0.0.1/api/auth/login",
+  "http_status_observed": 401,
+  "requests_sent": 6,
+  "alert_rule": {
+    "name": "BillingHighLoginFailureRate",
+    "group": "security_alerts",
+    "folder": "Security",
+    "evaluation_interval": "15s",
+    "for_duration": "30s",
+    "initial_state": "Normal",
+    "intermediate_state": "Pending (at 2026-10-13T15:22:40Z)",
+    "final_state": "Firing / Alerting (at 2026-10-13T15:23:40Z)",
+    "expr": "sum(count_over_time({service=\"web\"} | json | msg=\"auth.login_failed\" [5m])) > 4"
+  },
+  "logql_queries_verified": [
+    {
+      "query": "{service=\"web\"} | json | msg=\"auth.login_failed\"",
+      "result": "PASS",
+      "records_matched": 6,
+      "sample": {
+        "level": "warn",
+        "msg": "auth.login_failed",
+        "request_id": "1ee54002-b5dc-4667-a1d8-c9cd0d3df52b"
+      }
+    },
+    {
+      "query": "{service=\"nginx\"} | json | status >= 400",
+      "result": "PASS",
+      "records_matched": 6,
+      "sample": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "status": 401,
+        "remote_addr": "172.24.0.1"
+      }
+    },
+    {
+      "query": "sum by (status) (count_over_time({service=\"nginx\"} | json [5m]))",
+      "result": "PASS",
+      "records_matched": 2,
+      "description": "Aggregates request distribution and spikes for HTTP 401/404/200"
+    },
+    {
+      "query": "{service=\"web\"} |= \"1ee54002-b5dc-4667-a1d8-c9cd0d3df52b\"",
+      "result": "PASS",
+      "description": "Correlates Nginx edge request with internal backend execution log by request_id"
+    }
+  ],
+  "mitigation_applied": {
+    "rate_limiting": "Nginx limit_req zone applied to /api/auth/login",
+    "session_security": "Failed authentication immediately destroys transient session",
+    "network_block": "Client IP flagged for firewall isolation",
+    "alert_resolution": "Automatic recovery to Normal after 5-minute sliding evaluation window expires"
+  }
+}

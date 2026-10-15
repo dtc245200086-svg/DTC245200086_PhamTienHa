@@ -1,4 +1,26 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function loadEnv() {
+  const envPath = path.resolve(__dirname, '../.env');
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const line of content.split(/\r?\n/)) {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const val = match[2].trim();
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  }
+}
+loadEnv();
 
 const baseUrl = process.env.CP2_BASE_URL || 'https://localhost';
 const adminPassword = process.env.ADMIN_PASSWORD;
@@ -33,11 +55,16 @@ class ApiClient {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body)
     });
+    if (response.status === 429 && path.includes('/auth/login')) {
+      console.log('[TEST_HARNESS] 429 Rate limit encountered on login. Backing off 12s for token replenishment...');
+      await new Promise(r => setTimeout(r, 12000));
+      return this.request(path, { method, body, headers: customHeaders });
+    }
     const setCookie = response.headers.get('set-cookie');
     if (setCookie) {
       this.cookie = setCookie.split(';', 1)[0];
     }
-    const payload = response.status === 204 ? null : await response.json();
+    const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
     return { response, payload };
   }
 }

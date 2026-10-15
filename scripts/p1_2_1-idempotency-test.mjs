@@ -26,11 +26,16 @@ class ApiClient {
       headers,
       body: body === undefined ? undefined : JSON.stringify(body)
     });
+    if (response.status === 429 && path.includes('/auth/login')) {
+      console.log('[TEST_HARNESS] 429 Rate limit encountered on login. Backing off 12s for token replenishment...');
+      await new Promise(r => setTimeout(r, 12000));
+      return this.request(path, { method, body, headers: customHeaders });
+    }
     const setCookie = response.headers.get('set-cookie');
     if (setCookie) {
       this.cookie = setCookie.split(';', 1)[0];
     }
-    const payload = response.status === 204 ? null : await response.json();
+    const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
     return { response, payload };
   }
 }

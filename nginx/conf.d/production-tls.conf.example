@@ -1,0 +1,114 @@
+# ============================================================================
+# BILLING_ONE EXTENDED — PRODUCTION TLS NGINX CONFIGURATION TEMPLATE
+# File: nginx/conf.d/production-tls.conf.example
+# ============================================================================
+# CRITICAL NOTICE FOR PRODUCTION DEPLOYMENT:
+# 1. Replace placeholder certificate paths with valid CA-issued certificates
+#    (e.g., Let's Encrypt / DigiCert / Enterprise Corporate PKI).
+# 2. Never deploy self-signed certificates in public production environments.
+# ============================================================================
+
+# Rate limiting zone for authentication endpoints (Protection against brute-force)
+limit_req_zone $binary_remote_addr zone=login:10m rate=15r/m;
+limit_req_status 429;
+
+# Structured JSON access log format for SIEM and Logstash/Loki ingestion
+log_format nginx_json escape=json '{"ts":"$time_iso8601","method":"$request_method","path":"$uri","status":$status,"request_time":$request_time,"bytes":$body_bytes_sent,"remote_addr":"$remote_addr","request_id":"$request_id","user_agent":"$http_user_agent"}';
+
+# HTTP (Port 80) -> HTTPS (Port 443) Strict Permanent Redirection
+server {
+    listen 80;
+    listen [::]:80;
+    server_name billing.yourcompany.com;
+    server_tokens off;
+
+    # Dedicated endpoint for Let's Encrypt ACME HTTP-01 challenge verification
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Lightweight internal health check endpoint (bypasses redirect)
+    location = /nginx-health {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Production HTTPS Server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name billing.yourcompany.com;
+
+    # Certificate and Private Key Paths (Mount securely via Docker secrets or volume)
+    ssl_certificate /etc/nginx/certs/production.crt;
+    ssl_certificate_key /etc/nginx/certs/production.key;
+
+    # Modern TLS Protocol Policy (Strictly TLS 1.2 and TLS 1.3 only; SSLv3/TLS1.0/TLS1.1 prohibited)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+
+    # Optimized SSL Session Caching & Resumption
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+
+    # OCSP Stapling for valid CA certificates
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 1.1.1.1 8.8.8.8 valid=300s;
+    resolver_timeout 5s;
+
+    # Hide server version tokens
+    server_tokens off;
+
+    # Buffer and request body limits
+    client_max_body_size 10m;
+    client_body_timeout 15s;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 60s;
+
+    # Access and Error Logging
+    access_log /dev/stdout nginx_json;
+    error_log /dev/stderr warn;
+
+    # Enterprise Production Security Headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+    add_header X-Request-Id $request_id always;
+
+    # Block sensitive internal health and management endpoints from external web access
+    location = /health {
+        return 404;
+    }
+    location = /metrics {
+        return 404;
+    }
+    location = /stub_status {
+        return 404;
+    }
+
+    # Protected Authentication Endpoint with IP-based Rate Limiting
+    location = /api/auth/login {
+        limit_req zone=login burst=10 nodelay;
+        proxy_pass http://web:3000;
+        include /etc/nginx/conf.d/proxy-headers.inc;
+    }
+
+    # Application Reverse Proxy
+    location / {
+        proxy_pass http://web:3000;
+        include /etc/nginx/conf.d/proxy-headers.inc;
+    }
+}

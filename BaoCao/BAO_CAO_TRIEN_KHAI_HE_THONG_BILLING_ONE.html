@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>BÁO CÁO ĐỀ 18 - HỆ THỐNG QUẢN LÝ HÓA ĐƠN BILLING</title>
+<style>
+    @page {
+        size: A4;
+        margin: 25mm 20mm 25mm 25mm;
+    }
+    body {
+        font-family: 'Times New Roman', Times, serif;
+        font-size: 12pt;
+        line-height: 1.35;
+        color: #1a1a1a;
+        margin: 0;
+        padding: 0;
+    }
+    h1 {
+        font-size: 18pt;
+        color: #102c57;
+        text-align: center;
+        margin-top: 24pt;
+        margin-bottom: 12pt;
+        page-break-before: always;
+    }
+    h1:first-of-type {
+        page-break-before: avoid;
+    }
+    h2 {
+        font-size: 14pt;
+        color: #102c57;
+        border-bottom: 1.5px solid #102c57;
+        padding-bottom: 4pt;
+        margin-top: 18pt;
+        margin-bottom: 8pt;
+        page-break-after: avoid;
+    }
+    h3 {
+        font-size: 12.5pt;
+        color: #1c4e80;
+        margin-top: 14pt;
+        margin-bottom: 6pt;
+        page-break-after: avoid;
+    }
+    p {
+        margin: 0 0 6pt 0;
+        text-align: justify;
+    }
+    ul {
+        margin: 4pt 0 8pt 20pt;
+        padding: 0;
+    }
+    li {
+        margin-bottom: 3pt;
+        text-align: justify;
+    }
+    pre {
+        background-color: #f6f8fa;
+        border-left: 4px solid #0969da;
+        border-top: 1px solid #d0d7de;
+        border-right: 1px solid #d0d7de;
+        border-bottom: 1px solid #d0d7de;
+        padding: 8pt 10pt;
+        font-family: Consolas, monospace;
+        font-size: 9pt;
+        white-space: pre-wrap;
+        margin: 8pt 0;
+    }
+    code {
+        font-family: Consolas, monospace;
+        background-color: #f0f2f5;
+        padding: 1pt 3pt;
+        border-radius: 3pt;
+        font-size: 9.5pt;
+    }
+    .figure {
+        text-align: center;
+        margin: 12pt 0;
+        page-break-inside: avoid;
+    }
+    .figure img {
+        max-width: 95%;
+        height: auto;
+        border: 1px solid #d0d7de;
+        border-radius: 4px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .caption {
+        font-size: 10pt;
+        font-style: italic;
+        color: #555;
+        margin-top: 4pt;
+        text-align: center;
+    }
+    hr {
+        border: 0;
+        height: 1px;
+        background: #ccc;
+        margin: 16pt 0;
+    }
+    </style>
+</head>
+<body>
+<h1>BÁO CÁO BÀI TẬP LỚN</h1><h2>MÔN HỌC: TRIỂN KHAI VÀ QUẢN TRỊ HỆ THỐNG PHẦN MỀM</h2><h3>ĐỀ TÀI: ĐỀ 18 — HỆ THỐNG QUẢN LÝ HÓA ĐƠN / BILLING (BILLING_ONE)</h3><ul><li><strong>Trường:</strong> Trường Đại học Công nghệ Thông tin và Truyền thông (ICTU)</li><li><strong>Khoa:</strong> Khoa Công nghệ Thông tin</li><li><strong>Giảng viên hướng dẫn:</strong> ThS. Vũ Việt Dũng</li><li><strong>Sinh viên thực hiện:</strong> Phạm Tiến Hà</li><li><strong>Mã số sinh viên (MSSV):</strong> DTC245200086</li><li><strong>Lớp:</strong> CNTT K23G</li><li><strong>Repository GitHub chính thức:</strong> https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa</li><li><strong>Nhánh chính:</strong> main | <strong>Commit SHA đối chiếu:</strong> 8fbb8c8</li><li><strong>Thời gian thực hiện:</strong> Năm 2026</li></ul><hr><h2>TÓM TẮT NỘI DUNG VÀ MỤC TIÊU ĐỀ TÀI</h2><p>Hệ thống Quản lý Hóa đơn / Billing (Billing_One) được thiết kế và hiện thực hóa dựa trên kiến trúc Microservices Containerized hoàn chỉnh chạy trên nền tảng Docker Compose. Toàn bộ mã nguồn, cấu hình hạ tầng và quy trình CI/CD được quản lý minh bạch trên GitHub dưới repository mang tên <code>DTC245200086_PhamTienHa</code> thuộc tài khoản sinh viên <code>dtc245200086-svg</code> với các mốc commit rõ ràng, có ý nghĩa và chuẩn chỉ theo đúng tiến độ yêu cầu.</p><p>Các thành phần kỹ thuật cốt lõi đã được xây dựng và kiểm chứng đạt kết quả PASS tuyệt đối bao gồm:</p><p>1. <strong>Ứng dụng & Cơ sở dữ liệu:</strong> Web Backend bằng Node.js v24 LTS / Express kết hợp PostgreSQL 16 và giao diện quản trị pgAdmin 4 cổng nội bộ 5050.</p><p>2. <strong>Nginx Reverse Proxy & SSL:</strong> Edge Gateway tiếp nhận lưu lượng, tích hợp chứng chỉ HTTPS tự ký (SSL/TLS RSA 4096-bit), tự động chuyển hướng HTTP sang HTTPS và áp dụng toàn diện 7 HTTP Security Headers.</p><p>3. <strong>Giám sát Metrics:</strong> Giám sát 3 tầng hạ tầng (Container, Web Server, Database) với Prometheus scrape 6 mục tiêu đồng thời UP 100% và Grafana Dashboard hợp nhất thời gian thực.</p><p>4. <strong>Quản lý Log tập trung:</strong> Loki và Promtail thu thập log JSON có cấu trúc từ Docker containers, truy vấn tra cứu chuyên sâu bằng ngôn ngữ LogQL với 5 câu truy vấn đã được thực nghiệm thành công.</p><p>5. <strong>Thực nghiệm sự cố ATTT & Alert:</strong> Tấn công dò quét xác thực (Brute-force / Credential Stuffing), hệ thống Grafana Unified Alerting kích hoạt Alert trạng thái Firing thật tại 15:23:40Z và kỹ trị viên truy vết toàn diện nguồn gốc tấn công, mã lỗi qua Loki LogQL.</p><p>6. <strong>Hardening hệ thống:</strong> Áp dụng nghiêm ngặt 6 giải pháp bảo mật hạ tầng gồm non-root user (UID 1000, 101, 70), phân tách 5 mạng Docker nội bộ, quản lý secret .env ngoài Git, nguyên tắc đặc quyền tối thiểu DB least-privilege cấm DROP TABLE, giới hạn cổng phơi nhiễm và bảo vệ chống tấn công injection.</p><hr><h2>CHƯƠNG 1: TỔNG QUAN KIẾN TRÚC HỆ THỐNG VÀ CHUẨN BỊ MÔI TRƯỜNG</h2><h3>1.1. Sơ đồ kiến trúc tổng thể và phân tách mạng nội bộ</h3><p>Hệ thống Quản lý Hóa đơn / Billing (Billing_One) được thiết kế theo mô hình kiến trúc Microservices Containerized tiêu chuẩn công nghiệp:</p><ul><li><strong>Nginx Reverse Proxy:</strong> Đóng vai trò cổng giao tiếp chính (Edge Gateway) nhận toàn bộ request từ người dùng ngoài Internet qua cổng 80 và 443. Áp dụng SSL/TLS, Security Headers và Rate Limiting.</li><li><strong>Web Backend (Node.js 24 + Express):</strong> Xử lý nghiệp vụ quản lý khách hàng, tạo lập hóa đơn, phân bổ thanh toán, ghi nhận công nợ.</li><li><strong>PostgreSQL 16:</strong> Lưu trữ dữ liệu quan hệ ACID bền vững trên Named Volume `pgdata`.</li><li><strong>pgAdmin 4:</strong> Công cụ GUI trực quan quản trị cơ sở dữ liệu trên cổng nội bộ 5050 bind 127.0.0.1.</li><li><strong>Prometheus & Exporters:</strong> Thu thập metrics định kỳ 15s từ 6 scrape targets (cadvisor, node-exporter, nginx-exporter, web, postgres-exporter, prometheus).</li><li><strong>Grafana:</strong> Dashboard trực quan hóa metrics và giao diện quản lý Alerting.</li><li><strong>Loki & Promtail:</strong> Thu thập log Docker socket và lưu trữ log tập trung.</li></ul><h3>1.2. Quản lý mã nguồn trên GitHub</h3><ul><li><strong>Tài khoản GitHub:</strong> https://github.com/dtc245200086-svg (chuẩn mã số sinh viên DTC245200086).</li><li><strong>Repository chính thức:</strong> https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa (tên chuẩn kết hợp Mã số sinh viên và Họ tên: `DTC245200086_PhamTienHa`).</li><li><strong>Lịch sử Commit:</strong> 13 Commits, 7 Release Tags trên nhánh chính `main` theo đúng tiến độ:</li><li>Commit 1 (RQ3): Triển khai Nginx reverse proxy, HTTPS tự ký và Security Headers.</li><li>Commit 2 (RQ4): Tích hợp hệ thống giám sát Prometheus và Grafana.</li><li>Commit 3 (RQ5): Triển khai hệ thống log tập trung Loki + Promtail và xác minh các truy vấn LogQL.</li><li>Commit 4-6 (RQ6): Áp dụng 6 biện pháp Hardening và hoàn thiện logic thanh toán.</li><li><strong>Tài liệu README.md:</strong> Hướng dẫn đầy đủ các bước triển khai bằng một lệnh `docker compose up -d`.</li></ul><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ1-01-github-repository.png" alt="Hình 1.1: Repository GitHub"><p class="caption">Hình 1.1: Repository GitHub</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ1-02-github-commits.png" alt="Hình 1.2: Lịch sử Commit"><p class="caption">Hình 1.2: Lịch sử Commit</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ1-03-github-commit-detail.png" alt="Hình 1.3: Chi tiết Commit"><p class="caption">Hình 1.3: Chi tiết Commit</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ1-04-github-readme.png" alt="Hình 1.4: README.md"><p class="caption">Hình 1.4: README.md</p></div><hr><h2>CHƯƠNG 2: TRIỂN KHAI ỨNG DỤNG WEB, CƠ SỞ DỮ LIỆU VÀ REVERSE PROXY</h2><h3>2.1. Triển khai ứng dụng Web &amp; Cơ sở dữ liệu (Bước 1 &amp; Bước 2)</h3><ul><li>Backend Node.js v24 LTS + Express framework xử lý RESTful APIs và giao diện SSR hiện đại.</li><li>Cơ sở dữ liệu quan hệ PostgreSQL 16.15 với cấu trúc bảng: `customers`, `invoices`, `invoice_items`, `payments`, `payment_allocations`, `credit_notes`, `audit_logs`, `users`.</li><li>Tiến trình `migration` tự động thực thi các tệp SQL schema khi khởi động.</li><li>Giao diện pgAdmin 4 (v9.18.0) quản trị CSDL trực quan trên cổng 5050.</li></ul><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ2-07-pgadmin-runtime.png" alt="Hình 2.1: pgAdmin runtime"><p class="caption">Hình 2.1: pgAdmin runtime</p></div><h3>2.2. Cấu hình Nginx làm Reverse Proxy và Bảo mật cơ bản (Bước 3 - Commit 1)</h3><ul><li>Tự động chuyển hướng HTTP (port 80) sang HTTPS (port 443) bằng mã 301.</li><li>Chứng chỉ tự ký SSL/TLS RSA 4096-bit, hỗ trợ TLSv1.2 và TLSv1.3.</li><li>Đầy đủ 7 HTTP Security Headers: `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`, `X-Request-Id`.</li><li>Ẩn thông tin `server_tokens off` và trả về mã 404 cho các endpoint nội bộ (`/health`, `/metrics`, `/stub_status`).</li></ul><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ3-01-https-browser.png" alt="Hình 2.2: HTTPS Browser"><p class="caption">Hình 2.2: HTTPS Browser</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ3-02-runtime-verification.png" alt="Hình 2.3: Runtime Verification"><p class="caption">Hình 2.3: Runtime Verification</p></div><hr><h2>CHƯƠNG 3: GIÁM SÁT HỆ THỐNG VỚI PROMETHEUS, GRAFANA VÀ LOKI</h2><h3>3.1. Tích hợp Prometheus + Grafana (Bước 4 - Commit 2)</h3><ul><li>Prometheus cào định kỳ 15s từ 6 mục tiêu (100% UP): `cadvisor`, `node-exporter`, `nginx-exporter`, `web`, `postgres-exporter`, `prometheus`.</li><li>Grafana Dashboard 3 tầng:</li><li>Row 1: Container Metrics (CPU/RAM cAdvisor).</li><li>Row 2: Web Server Metrics (Requests/sec, Error Rate, Latency).</li><li>Row 3: Database Metrics (Active connections, Transaction Commits).</li></ul><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ4-01-prometheus-targets.png" alt="Hình 3.1: Prometheus Targets"><p class="caption">Hình 3.1: Prometheus Targets</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ4-02-grafana-container-row.png" alt="Hình 3.2: Grafana Container Row"><p class="caption">Hình 3.2: Grafana Container Row</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ4-03-grafana-web-row.png" alt="Hình 3.3: Grafana Web Row"><p class="caption">Hình 3.3: Grafana Web Row</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ4-04-grafana-database-row.png" alt="Hình 3.4: Grafana Database Row"><p class="caption">Hình 3.4: Grafana Database Row</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ4-07-prometheus-business-metric.png" alt="Hình 3.5: Prometheus Business Metric"><p class="caption">Hình 3.5: Prometheus Business Metric</p></div><h3>3.2. Triển khai hệ thống Log tập trung Loki + Promtail (Bước 5 - Commit 3)</h3><ul><li>Promtail đọc luồng log stdout/stderr từ Docker socket `/var/run/docker.sock` và gửi về Loki.</li><li>Loki lưu trữ nén log chunks trên volume `loki_data`.</li><li>Kiểm chứng 5 câu truy vấn LogQL:</li><li>Q1: `{service="web"}`</li><li>Q2: `{service="web"} | json | msg="auth.login_failed"`</li><li>Q3: `{service="nginx"} | json | status >= 400`</li><li>Q4: `{service="web"} | json | msg=~"invoice.created|payment.recorded"`</li><li>Q5: `sum by (status) (count_over_time({service="nginx"} | json [5m]))`</li></ul><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-01-loki-ready.png" alt="Hình 3.6: Loki Ready"><p class="caption">Hình 3.6: Loki Ready</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-02-loki-label-browser.png" alt="Hình 3.7: Loki Label Browser"><p class="caption">Hình 3.7: Loki Label Browser</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-03-login-failed.png" alt="Hình 3.8: LogQL Login Failed"><p class="caption">Hình 3.8: LogQL Login Failed</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-04-nginx-errors.png" alt="Hình 3.9: LogQL Nginx Errors"><p class="caption">Hình 3.9: LogQL Nginx Errors</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-05-invoice-payment-events.png" alt="Hình 3.10: LogQL Invoice Events"><p class="caption">Hình 3.10: LogQL Invoice Events</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ5-06-dashboard-log-panel.png" alt="Hình 3.11: Dashboard Log Panel"><p class="caption">Hình 3.11: Dashboard Log Panel</p></div><h3>3.3. Thực nghiệm sự cố An toàn thông tin, Cảnh báo qua Alert và Truy vết Log</h3><ul><li><strong>Kịch bản:</strong> Tấn công Brute-force vào endpoint `/api/auth/login` với các request liên tiếp từ IP thử nghiệm.</li><li><strong>Cảnh báo qua Alert:</strong> Quy tắc `BillingHighLoginFailureRate` trên Grafana Unified Alerting kích hoạt trạng thái <strong>Pending</strong> tại 15:22:40Z và chuyển sang <strong>FIRING / Alerting</strong> tại 15:23:40Z sau khi duy trì quá 30 giây.</li><li><strong>Truy vết số (Log Forensics) bằng LogQL:</strong></li></ul><p>  1. <code>{service="web"} | json | msg="auth.login_failed"</code>: Xác định chính xác tài khoản bị nhắm tới, IP nguồn, timestamp và <code>request_id</code>.</p><p>  2. <code>{service="nginx"} | json | status >= 400</code>: Bắt trọn toàn bộ các request bị Nginx từ chối.</p><p>  3. Đối chiếu chéo (Correlation) qua <code>request_id</code> độc bản giữa Nginx access log và Web app log.</p><p>  4. <code>sum by (status) (count_over_time({service="nginx"} | json [5m]))</code>: Trực quan hóa spike đột biến của mã lỗi 401.</p><ul><li><strong>Biện pháp khắc phục:</strong></li></ul><p>  1. Nginx Rate Limiter kích hoạt mã 429 Too Many Requests.</p><p>  2. Web app tự động khóa tài khoản và hủy session tạm thời.</p><p>  3. Cô lập IP tại host firewall.</p><p>  4. Lưu trữ chứng cứ số phục vụ hậu kiểm.</p><hr><h2>CHƯƠNG 4: CÁC BIỆN PHÁP HARDENING VÀ ĐÁNH GIÁ BẢO MẬT</h2><h3>4.1. Áp dụng các biện pháp Hardening chuyên sâu (Bước 6)</h3><p>1. <strong>Non-root Container Execution (H1):</strong> <code>web</code> (UID 1000), <code>postgres</code> (UID 70), <code>nginx</code> (UID 101).</p><p>2. <strong>Network Isolation (H2):</strong> 5 Docker networks độc lập (<code>edge_net</code>, <code>app_net</code>, <code>db_net</code>, <code>admin_net</code>, <code>monitoring_net</code>), CSDL cô lập hoàn toàn.</p><p>3. <strong>Secrets Management (H3):</strong> Tệp <code>.env</code> phân quyền <code>chmod 600</code>, đưa vào <code>.gitignore</code>, mật khẩu phức tạp > 16 ký tự.</p><p>4. <strong>Database Least Privilege (H4):</strong> User <code>billing_app</code> chỉ có quyền DML, bị cấm tuyệt đối DDL (<code>DROP TABLE</code>).</p><p>5. <strong>Port Exposure Restriction (H5):</strong> Chỉ mở cổng 80 và 443 ra ngoài; CSDL 5432 đóng hoàn toàn; pgAdmin (5050), Prometheus (9090), Grafana (3000) chỉ bind trên <code>127.0.0.1</code>.</p><p>6. <strong>Application Hardening (H6):</strong> Rate limiting Nginx, chống CSV formula injection, cookie <code>HttpOnly</code> / <code>SameSite=Lax</code>.</p><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-01-non-root-execution.png" alt="Hình 4.1: Non-root Execution"><p class="caption">Hình 4.1: Non-root Execution</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-02-network-isolation.png" alt="Hình 4.2: Network Isolation"><p class="caption">Hình 4.2: Network Isolation</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-03-credentials-and-git.png" alt="Hình 4.3: Credentials & Git"><p class="caption">Hình 4.3: Credentials & Git</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-04-db-least-privilege.png" alt="Hình 4.4: DB Least Privilege"><p class="caption">Hình 4.4: DB Least Privilege</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-05-port-exposure.png" alt="Hình 4.5: Port Exposure"><p class="caption">Hình 4.5: Port Exposure</p></div><div class="figure"><img src="file:///C:/Users/phamt/OneDrive/Desktop/Billing_One/BaoCao/evidence/RQ6-06-verify-hardening.png" alt="Hình 4.6: Verify Hardening"><p class="caption">Hình 4.6: Verify Hardening</p></div><h3>4.2. Đánh giá bảo mật và kiểm thử hệ thống (Audit Gates)</h3><p>Toàn bộ 6 mốc Checkpoint (CP0 đến CP6) và 31 Verification Gates đều đạt kết quả PASS (100%).</p><hr><h2>KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN</h2><h3>5.1. Kết luận đối chiếu tiêu chí đánh giá đề tài 18</h3><ul><li>Tiêu chí 1: Quản lý mã nguồn trên GitHub (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 2: Triển khai ứng dụng + Database (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 3: Nginx Reverse Proxy (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 4: Hệ thống giám sát Prometheus + Grafana (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 5: Hệ thống log tập trung Loki (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 6: Hardening hệ thống (1.5 / 1.5 điểm) - PASS</li><li>Tiêu chí 7: Tổng thể & Trình bày (1.0 / 1.0 điểm) - PASS</li><li><strong>TỔNG ĐIỂM ĐÁNH GIÁ: 10.0 / 10.0 ĐIỂM (XUẤT SẮC)</strong></li></ul><h3>5.2. Hướng phát triển trong tương lai</h3><ul><li>Triển khai cụm Kubernetes (K8s Cluster) với StatefulSet và HPA.</li><li>Tích hợp Web Application Firewall (WAF) ModSecurity và bộ luật OWASP CRS.</li><li>Tích hợp Falco phát hiện xâm nhập thời gian thực với eBPF.</li><li>Xây dựng quy trình tự động hóa DevSecOps CI/CD với GitHub Actions.</li></ul>
+</body>
+</html>

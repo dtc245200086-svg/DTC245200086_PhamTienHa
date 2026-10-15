@@ -25,6 +25,27 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  migration:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: billing
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./db/migrations:/app/db/migrations:ro
+      - ./scripts:/app/scripts:ro
+    entrypoint: ["node", "/app/scripts/migrate.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - db_net
+    restart: "no"
+
   web:
     build:
       context: ./app
@@ -42,6 +63,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     networks:
       - db_net
       - app_net

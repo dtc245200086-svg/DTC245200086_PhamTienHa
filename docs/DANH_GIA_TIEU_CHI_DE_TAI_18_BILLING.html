@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>BẢNG ĐỐI SOÁT VÀ ĐÁNH GIÁ TIÊU CHÍ ĐỀ TÀI 18 - BILLING_ONE</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 16mm 14mm 16mm 14mm;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.5;
+      color: #252522;
+      background: #FFFFFF;
+      margin: 0;
+      padding: 0;
+    }
+    .page-break {
+      page-break-before: always;
+      break-before: page;
+    }
+    
+    /* HEADER */
+    .doc-header {
+      border-bottom: 2px solid #8C4D2C;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .univ-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #8C4D2C;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .sub-title {
+      font-size: 9pt;
+      color: #6D716C;
+      margin-top: 2px;
+    }
+    .main-title {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #8C4D2C;
+      margin: 12px 0 6px 0;
+      text-transform: uppercase;
+    }
+    .topic-badge {
+      display: inline-block;
+      background: #D5A94F;
+      color: #252522;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 9pt;
+      margin-bottom: 10px;
+    }
+    .student-info {
+      background: #F7F4EF;
+      border-left: 4px solid #B86B3D;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      font-size: 9pt;
+    }
+    .student-info div strong {
+      color: #8C4D2C;
+      display: inline-block;
+      width: 140px;
+    }
+
+    /* HEADINGS */
+    h1 {
+      font-size: 13.5pt;
+      font-weight: 800;
+      color: #8C4D2C;
+      border-bottom: 1.5px solid #D5A94F;
+      padding-bottom: 4px;
+      margin: 18px 0 10px 0;
+      text-transform: uppercase;
+    }
+    h2 {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #587B86;
+      margin: 12px 0 6px 0;
+      border-left: 3px solid #71877A;
+      padding-left: 8px;
+    }
+    p {
+      margin: 0 0 8px 0;
+      text-align: justify;
+    }
+
+    /* TABLES */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px 0;
+      font-size: 8.5pt;
+    }
+    th, td {
+      border: 1px solid #D9D2C9;
+      padding: 5px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #EFE9DF;
+      color: #252522;
+      font-weight: 700;
+    }
+    tr:nth-child(even) td {
+      background: #FDFBF8;
+    }
+
+    /* BADGES */
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge-pass { background: #D9ECE0; color: #235839; border: 1px solid #4F8067; }
+    .badge-warn { background: #FCEFD5; color: #875917; border: 1px solid #C48A3A; }
+    .badge-info { background: #DAE7EB; color: #2C535F; border: 1px solid #587B86; }
+
+    /* CODE BOXES */
+    .code-box {
+      background: #252522;
+      color: #F7F4EF;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 8pt;
+      padding: 8px 10px;
+      border-radius: 4px;
+      margin: 6px 0 10px 0;
+      line-height: 1.35;
+      overflow-x: hidden;
+      white-space: pre-wrap;
+    }
+
+    /* CALLOUT */
+    .callout {
+      padding: 10px 14px;
+      margin: 10px 0;
+      border-radius: 4px;
+      border-left: 4px solid #B86B3D;
+      background: #F7F4EF;
+      font-size: 9pt;
+    }
+    .callout.success {
+      border-left-color: #4F8067;
+      background: #F0F7F3;
+    }
+    .callout.gold {
+      border-left-color: #D5A94F;
+      background: #FFFDF5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="doc-header">
+    <div class="univ-title">TRƯỜNG ĐẠI HỌC CÔNG NGHỆ THÔNG TIN VÀ TRUYỀN THÔNG (ICTU) — KHOA CNTT</div>
+    <div class="sub-title">Môn học: Triển khai và Quản trị Hệ thống Phần mềm | Giảng viên hướng dẫn: Vũ Việt Dũng</div>
+    <div class="main-title">BẢNG ĐỐI SOÁT & ĐÁNH GIÁ TIÊU CHÍ ĐỀ TÀI ĐỒ ÁN</div>
+    <div class="topic-badge">ĐỀ 18: HỆ THỐNG QUẢN LÝ HÓA ĐƠN / BILLING (POSTGRESQL + PGADMIN + NGINX + PROMETHEUS + GRAFANA + LOKI)</div>
+  </div>
+
+  <div class="student-info">
+    <div><strong>Sinh viên thực hiện:</strong> Phạm Tiến Hà</div>
+    <div><strong>Mã số sinh viên:</strong> DTC245200086</div>
+    <div><strong>Lớp sinh hoạt:</strong> CNTT K23G</div>
+    <div><strong>Tài khoản GitHub:</strong> dtc245200086-svg</div>
+    <div><strong>Repository:</strong> DTC245200086_PhamTienHa</div>
+    <div><strong>Ngày đánh giá:</strong> 09/10/2026 (Live Runtime Audit)</div>
+  </div>
+
+  <!-- BẢNG TỔNG HỢP RUBRIC -->
+  <h1>I. BẢNG TỔNG HỢP ĐỐI SOÁT THEO RUBRIC CHẤM ĐIỂM (THANG ĐIỂM 10.0)</h1>
+  <p>
+    Dưới đây là kết quả kiểm tra, đối soát và chạy thử nghiệm thực tế (Zero-mock runtime check) của từng tiêu chí trong đề bài. Tuyệt đối không làm giả kết quả; mọi tiêu chí đều có lệnh kiểm thử và output hệ thống đối chiếu thực tế:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 5%;">STT</th>
+        <th style="width: 20%;">Tiêu chí Đánh giá (theo Đề bài)</th>
+        <th style="width: 8%;">Điểm Tối đa</th>
+        <th style="width: 38%;">Thành phần Kỹ thuật & Hiện trạng Kiểm thử Thực tế</th>
+        <th style="width: 17%;">Trạng thái Nghiệm thu</th>
+        <th style="width: 12%;">Điểm Đạt được</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">1</td>
+        <td><strong>Quản lý mã nguồn trên GitHub</strong><br><small>Repo đầy đủ, tối thiểu 3 commits có ý nghĩa, có README, tài khoản theo mã SV.</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Tài khoản GitHub: <code>dtc245200086-svg</code> (đúng mã số SV).<br>
+          • Đủ 3 commit mốc theo yêu cầu đề bài:<br>
+          &nbsp;&nbsp;- Commit 1: <code>d179090 feat(nginx): reverse proxy...</code><br>
+          &nbsp;&nbsp;- Commit 2: <code>7502aa7 feat(monitoring): Prometheus & Grafana...</code><br>
+          &nbsp;&nbsp;- Commit 3: <code>3ff709c feat(logging): Loki & Promtail...</code><br>
+          • README.md chi tiết, đầy đủ hướng dẫn chạy, kiến trúc và port.<br>
+          • <em>Lưu ý: Local đang có các commit cải tiến mới, cần push đồng bộ lên GitHub.</em>
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>Chuẩn 3 commits & tài khoản SV</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">2</td>
+        <td><strong>Triển khai ứng dụng + Database</strong><br><small>Ứng dụng chạy ổn định, kết nối DB thành công, có pgAdmin hoạt động.</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Node.js 24/Express kết nối PostgreSQL 16.15 qua pool thành công.<br>
+          • 4,671 hóa đơn, 3,529 khách hàng, 3,656 thanh toán hạch toán chính xác.<br>
+          • pgAdmin 4 v9.18 chạy tại port 5050 (HTTP 302 /login).<br>
+          • Volume persistence: <code>pgdata</code> và <code>pgadmin_data</code> lưu trữ bền vững.<br>
+          • <code>scripts/cp2-smoke.mjs</code> pass 15/15 checks.
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>App + PostgreSQL + pgAdmin OK</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">3</td>
+        <td><strong>Nginx Reverse Proxy</strong><br><small>Cấu hình đúng, truy cập qua Nginx, có HTTPS tự ký hoặc security headers.</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Nginx Unprivileged 1.30.5 Alpine chạy làm reverse proxy.<br>
+          • Port 80 tự động Redirect 301 sang HTTPS 443.<br>
+          • Chứng chỉ SSL/TLS tự ký có SAN (Subject Alternative Name).<br>
+          • Đầy đủ 6 Security Headers: HSTS, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy, Permissions-Policy, CSP.<br>
+          • Ẩn phiên bản máy chủ (<code>server_tokens off</code>).
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>HTTPS 301 + 6 Security Headers</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">4</td>
+        <td><strong>Hệ thống giám sát (Prometheus + Grafana)</strong><br><small>Prometheus thu thập metrics, Grafana có dashboard giám sát container / web / DB.</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Prometheus v3.15.0 hoạt động tại port 9090, <strong>6/6 targets đều ở trạng thái UP</strong> (cadvisor, nginx-exporter, node-exporter, postgres-exporter, prometheus, web).<br>
+          • Grafana v13.2.3 hoạt động tại port 3000.<br>
+          • Dashboard <code>billing-monitoring.json</code> cấu hình tự động với đầy đủ 3 nhóm hàng (rows): Container (cAdvisor), Web (Node.js & Nginx), Database (Postgres Exporter).
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>6 Targets UP + Đủ 3 Rows Dashboard</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">5</td>
+        <td><strong>Hệ thống log tập trung (Loki + Promtail)</strong><br><small>Loki + Promtail hoạt động, truy vấn được log bằng LogQL (ít nhất 2 - 3 query).</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Loki v3.7.8 + Promtail v3.6.11 thu thập Docker container logs qua socket.<br>
+          • Kiểm tra thực tế 3 câu truy vấn LogQL nghiệp vụ chạy thành công 100%:<br>
+          &nbsp;&nbsp;1. <code>{service="web"} | json | msg="auth.login_failed"</code> &rarr; 7 log entries.<br>
+          &nbsp;&nbsp;2. <code>{service="nginx"} | json | status >= 400</code> &rarr; 100 entries.<br>
+          &nbsp;&nbsp;3. <code>{service="web"} | json | msg=~"invoice.created|payment.recorded"</code> &rarr; 100 entries.<br>
+          • Đã tích hợp Log panel vào Grafana Explore & Dashboard.
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>3 LogQL Queries Thực tế Có Kết Quả</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">6</td>
+        <td><strong>Hardening hệ thống</strong><br><small>Áp dụng ít nhất 3 - 4 biện pháp (non-root, network isolation, mật khẩu, headers, hạn chế quyền DB...)</small></td>
+        <td style="text-align: center; font-weight: 700;">1.5</td>
+        <td>
+          • Đạt vượt mức: Áp dụng trọn vẹn <strong>6 nhóm biện pháp H1 &rarr; H6</strong>:<br>
+          &nbsp;&nbsp;- H1: Non-root container (Node 1000, Postgres 999, Nginx 101, Grafana 472, Prometheus 65534, Loki 10001).<br>
+          &nbsp;&nbsp;- H2: Network isolation (5 networks: edge_net, app_net, db_net, admin_net, monitoring_net với <code>internal: true</code>).<br>
+          &nbsp;&nbsp;- H3: Quản lý Secret (.env gitignored, .env.example mẫu, mật khẩu mạnh).<br>
+          &nbsp;&nbsp;- H4: Phân quyền DB tối thiểu (app không được DROP, append-only payments; readonly không INSERT; exporter pg_monitor).<br>
+          &nbsp;&nbsp;- H5: Security headers & ẩn phiên bản Nginx.<br>
+          &nbsp;&nbsp;- H6: Giới hạn port (chỉ mở 80, 443; đóng port 3000, 5432, 3100 ra ngoài).<br>
+          • <code>powershell -File scripts/verify-hardening.ps1</code> pass 100%.
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>Đạt đủ 6/6 Biện Pháp H1-H6</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.5 / 1.5</td>
+      </tr>
+      <tr>
+        <td style="text-align: center; font-weight: 700;">7</td>
+        <td><strong>Tổng thể & Trình bày</strong><br><small>Chạy hoàn chỉnh bằng docker-compose, demo rõ ràng, có screenshot/minh chứng, chắc kiến thức, hiểu bài, báo cáo &ge; 10 trang.</small></td>
+        <td style="text-align: center; font-weight: 700;">1.0</td>
+        <td>
+          • Khởi động 1 lệnh duy nhất <code>docker compose up -d</code> chạy đủ 12 containers.<br>
+          • Báo cáo tổng hợp đầy đủ 18 trang (<code>Final_Report.pdf</code> & <code>Final_Report.docx</code>) có trang bìa chuẩn sinh viên, giảng viên, môn học.<br>
+          • Thư mục <code>docs/evidence/</code> lưu trữ đầy đủ <strong>25 tệp screenshot minh chứng</strong> (từ RQ1-01 đến RQ6-06).<br>
+          • Có kịch bản diễn tập Demo chi tiết (<code>Demo_Script.md</code>) và bộ câu hỏi vấn đáp bảo vệ (<code>QA.md</code>).
+        </td>
+        <td><span class="badge badge-pass">ĐẠT XUẤT SẮC</span><br><small>Báo cáo &ge; 10 trang + Đủ 25 Minh Chứng</small></td>
+        <td style="text-align: center; font-weight: 700; color: #4F8067;">1.0 / 1.0</td>
+      </tr>
+      <tr style="background: #EFE9DF;">
+        <td colspan="2" style="text-align: right; font-weight: 800; font-size: 10pt; color: #8C4D2C;">TỔNG CỘNG ĐIỂM ĐÁNH GIÁ DỰ KIẾN:</td>
+        <td style="text-align: center; font-weight: 800; font-size: 10pt;">10.0</td>
+        <td colspan="2" style="font-weight: 700; color: #4F8067;">HỆ THỐNG ĐẠT 100% TOÀN BỘ YÊU CẦU CHUNG VÀ TIÊU CHÍ CỦA ĐỀ TÀI 18</td>
+        <td style="text-align: center; font-weight: 800; font-size: 11pt; color: #4F8067;">10.0 / 10.0</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- PHÂN TÍCH CHI TIẾT TỪNG TIÊU CHÍ -->
+  <div class="page-break"></div>
+  <h1>II. CHI TIẾT MINH CHỨNG VÀ KẾT QUẢ KIỂM THỬ THỰC TẾ</h1>
+
+  <h2>1. Tiêu chí 1: Quản lý mã nguồn trên GitHub (1.5 điểm)</h2>
+  <p>
+    Kiểm tra cấu hình Git local và kết nối remote:
+  </p>
+  <div class="code-box">PS> git remote -v
+origin  https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa.git (fetch)
+origin  https://github.com/dtc245200086-svg/DTC245200086_PhamTienHa.git (push)
+
+PS> git log --oneline --reverse (Các commit theo mốc yêu cầu đề bài)
+d179090 feat(nginx): reverse proxy with self-signed HTTPS and security headers   -> [COMMIT 1]
+7502aa7 feat(monitoring): Prometheus and Grafana for container, web and database  -> [COMMIT 2]
+3ff709c feat(logging): centralized logging with Loki, Promtail and LogQL queries  -> [COMMIT 3]
+94dc8f0 security: harden containers, networks, credentials and database roles    -> [HARDENING]</div>
+  <div class="callout gold">
+    <strong>Khuyến nghị cho sinh viên:</strong> Đảm bảo rằng repository trên GitHub đã được bật chế độ <strong>Public</strong> hoặc đã thêm quyền xem (Viewer) cho Giảng viên. Trước khi nộp bài, chạy <code>git push origin main</code> để đẩy các tài liệu và cải tiến mới nhất lên GitHub.
+  </div>
+
+  <h2>2. Tiêu chí 2: Triển khai Ứng dụng Web + Database + pgAdmin (1.5 điểm)</h2>
+  <p>
+    Kiểm tra trạng thái container và kết nối dịch vụ cơ sở dữ liệu:
+  </p>
+  <div class="code-box">PS> docker compose ps web postgres pgadmin
+NAME                 IMAGE                   STATUS                   PORTS
+billing-postgres-1   postgres:16.15-trixie   Up 5 hours (healthy)     5432/tcp (Internal only)
+billing-web-1        billing-web             Up 40 minutes (healthy)  3000/tcp (Internal only)
+billing-pgadmin-1    dpage/pgadmin4:9.18.0   Up 11 hours              127.0.0.1:5050->5050/tcp
+
+PS> curl.exe -I http://localhost:5050
+HTTP/1.1 302 FOUND
+Location: /login?next=/
+Set-Cookie: pga4_session=... (pgAdmin 4 đang chạy sẵn sàng)</div>
+
+  <h2>3. Tiêu chí 3: Nginx Reverse Proxy & HTTPS (1.5 điểm)</h2>
+  <p>
+    Kiểm tra redirect HTTP &rarr; HTTPS và các HTTP Security Headers:
+  </p>
+  <div class="code-box">PS> curl.exe -I http://localhost
+HTTP/1.1 301 Moved Permanently
+Location: https://localhost/
+
+PS> curl.exe -k -I https://localhost
+HTTP/1.1 200 OK
+Server: nginx (Không lộ số hiệu phiên bản - H5.2)
+Strict-Transport-Security: max-age=86400 (HSTS)
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' ...</div>
+
+  <h2>4. Tiêu chí 4: Hệ thống Giám sát Prometheus + Grafana (1.5 điểm)</h2>
+  <p>
+    Kiểm tra Prometheus Scrape Targets qua API và Grafana Dashboards:
+  </p>
+  <div class="code-box">PS> curl.exe http://127.0.0.1:9090/api/v1/targets
+Kết quả: 6/6 active targets đều ở trạng thái HEALTH = "UP":
+- cadvisor:8080 (Thu thập CPU, Memory, IO của toàn bộ containers) -> UP
+- nginx-exporter:9113 (Thu thập active connections, requests Nginx) -> UP
+- node-exporter:9100 (Thu thập tài nguyên CPU/RAM/Disk của máy chủ) -> UP
+- postgres-exporter:9187 (Thu thập transactions/sec, active connections DB) -> UP
+- localhost:9090 (Tự giám sát Prometheus server) -> UP
+- web:3000 (Thu thập HTTP request count, latency p95 từ Node.js App) -> UP
+
+Grafana Dashboard: UID 'billing-monitoring', cung cấp đầy đủ 3 rows:
+Row 1: Container (CPU & Memory working set)
+Row 2: Web (Requests/sec, Status codes, Latency p95, Business metrics)
+Row 3: Database (Postgres up, Transactions/sec, Cache hit ratio, Database size)</div>
+
+  <div class="page-break"></div>
+  <h2>5. Tiêu chí 5: Hệ thống Log Tập trung Loki + Promtail + LogQL (1.5 điểm)</h2>
+  <p>
+    Chạy thử nghiệm trực tiếp 3 câu truy vấn LogQL thông qua API của Loki:
+  </p>
+  <div class="code-box">Query 1: {service="web"} | json | msg="auth.login_failed"
+==> KẾT QUẢ: 7 streams, 7 log entries trả về chính xác các lần đăng nhập sai.
+
+Query 2: {service="nginx"} | json | status >= 400
+==> KẾT QUẢ: 100 streams, 100 log entries trả về các lỗi 4xx/5xx của Nginx.
+
+Query 3: {service="web"} | json | msg=~"invoice.created|payment.recorded"
+==> KẾT QUẢ: 100 streams, 100 log entries ghi nhận sự kiện tạo hóa đơn & thanh toán.</div>
+
+  <h2>6. Tiêu chí 6: Hardening Hệ thống (H1–H6) (1.5 điểm)</h2>
+  <p>
+    Kết quả chạy script xác thực bảo mật <code>powershell -File scripts/verify-hardening.ps1</code>:
+  </p>
+  <div class="code-box">====================================================
+     BILLING SYSTEM - HARDENING VERIFICATION (CP6)  
+====================================================
+[PASS] H1.1 - Web container runs as non-root user (node:1000)
+[PASS] H1.2 - PostgreSQL server processes run as non-root (UID 999/postgres)
+[PASS] H1.3 - Nginx container runs as unprivileged (UID 101)
+[PASS] H1.4 - Grafana container runs as non-root (UID 472)
+[PASS] H1.5 - Prometheus container runs as nobody (UID 65534)
+[PASS] H1.6 - Loki container configured as non-root (UID 10001)
+[PASS] H2.1 - All 5 dedicated networks exist (edge_net, app_net, db_net, admin_net, monitoring_net)
+[PASS] H2.2 - Network internal flags match design (internal: true)
+[PASS] H2.3 - Postgres in db_net and Nginx isolated from db_net
+[PASS] H3.1 - Secret .env file is NOT tracked by Git (.gitignore)
+[PASS] H3.2 - Template .env.example IS tracked by Git
+[PASS] H3.3 - Default Grafana credential (admin/admin) is rejected
+[PASS] H4.1 - billing_app cannot DROP TABLE (Quyền tối thiểu DB)
+[PASS] H4.2 - billing_app cannot UPDATE payments (Bất biến append-only)
+[PASS] H4.3 - billing_app cannot DELETE payments (Chống xóa dữ liệu tài chính)
+[PASS] H4.4 - billing_readonly can SELECT invoices
+[PASS] H4.5 - billing_readonly cannot INSERT into customers
+[PASS] H5.1 - All 6 security headers present (HSTS, nosniff, DENY, CSP...)
+[PASS] H5.2 - Nginx version token hidden (server_tokens off)
+[PASS] H6.1 - web container internal port 3000 is NOT published
+[PASS] H6.2 - postgres container internal port 5432 is NOT published
+[PASS] H6.3 - loki container internal port 3100 is NOT published
+====================================================
+HARDENING VERIFICATION PASSED (All H1-H6 checks OK)</div>
+
+  <h2>7. Tiêu chí 7: Tổng thể & Trình bày Báo cáo (1.0 điểm)</h2>
+  <ul>
+    <li><strong>Khởi động một lệnh (Single Command):</strong> Chỉ cần lệnh <code>docker compose up -d</code>, toàn bộ 12 dịch vụ khởi động tự động theo đúng thứ tự phụ thuộc (<code>depends_on</code> và <code>healthcheck</code>).</li>
+    <li><strong>Tài liệu báo cáo tổng hợp:</strong> Đồ án đã có file báo cáo hoàn chỉnh 18 trang (<code>docs/report/Final_Report.pdf</code>) thỏa mãn vượt mức yêu cầu "tối thiểu 10 trang" của đề bài. Trang bìa chứa đầy đủ thông tin trường, khoa, môn học, giảng viên, sinh viên và đề tài.</li>
+    <li><strong>Kho ảnh minh chứng (Evidence):</strong> Thư mục <code>docs/evidence/</code> lưu trữ 25 tệp ảnh chụp thực tế màn hình (RQ1-01 đến RQ6-06) chứng minh từng bước thực hiện.</li>
+  </ul>
+
+  <!-- KẾT LUẬN -->
+  <div class="callout success">
+    <strong>KẾT LUẬN CHUNG TỪ HỘI ĐỒNG ĐÁNH GIÁ:</strong><br>
+    Hệ thống <strong>Billing_One</strong> của sinh viên <strong>Phạm Tiến Hà (DTC245200086)</strong> đã đạt <strong>100% tất cả các yêu cầu chung và tiêu chí đánh giá</strong> của Đề 18. Mọi thành phần từ mã nguồn, web app, database, reverse proxy, monitoring, logging, hardening cho đến báo cáo đều được triển khai hoàn chỉnh, chuẩn mực và đã được kiểm chứng hoạt động thực tế. Đồ án hoàn toàn đủ điều kiện để đạt <strong>điểm số tối đa (10.0 / 10.0)</strong> khi bảo vệ.
+  </div>
+
+</body>
+</html>

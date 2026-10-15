@@ -483,16 +483,17 @@ async function run() {
     testPassed++;
   }
 
+  let t16Cust;
   // --------------------------------------------------------------------------
   // T16: Customer debt remains correct when invoice is OVERDUE
   // --------------------------------------------------------------------------
   console.log('[T16] Kiểm tra customer.current_debt sau khi hóa đơn thành OVERDUE...');
   {
-    const cust = await createTestCustomer('T16');
-    const inv1 = await createIssuedInvoice(cust.id, 1200000, 10);
-    const inv2 = await createIssuedInvoice(cust.id, 2300000, 10);
+    t16Cust = await createTestCustomer('T16');
+    const inv1 = await createIssuedInvoice(t16Cust.id, 1200000, 10);
+    const inv2 = await createIssuedInvoice(t16Cust.id, 2300000, 10);
 
-    const custBefore = check(await staff.request(`/api/customers/${cust.id}`), 200, 'T16 customer before');
+    const custBefore = check(await staff.request(`/api/customers/${t16Cust.id}`), 200, 'T16 customer before');
     assert.equal(custBefore.customer.current_debt, '3500000.00');
 
     // Make inv2 overdue
@@ -500,7 +501,7 @@ async function run() {
     triggerOverdueScan();
     assert.equal(queryDb(`SELECT status FROM public.invoices WHERE id = ${inv2.id}`), 'OVERDUE');
 
-    const custAfter = check(await staff.request(`/api/customers/${cust.id}`), 200, 'T16 customer after');
+    const custAfter = check(await staff.request(`/api/customers/${t16Cust.id}`), 200, 'T16 customer after');
     assert.equal(custAfter.customer.current_debt, '3500000.00', 'T16: current_debt must not decrease when invoice becomes OVERDUE');
     console.log('  -> PASS: T16 verified (No debt drop)');
     testPassed++;
@@ -514,7 +515,7 @@ async function run() {
     const agingRes = check(await staff.request('/api/reports/aging'), 200, 'T17 aging report');
     assert.ok(Number(agingRes.summary.total_receivables) > 0, 'Aging total receivables must be positive');
     // Check customer from T16 is present in customers matrix
-    const custInAging = agingRes.customers.find(c => c.customer_name.includes('T16'));
+    const custInAging = agingRes.customers.find(c => c.customer_id === t16Cust.id || c.customer_name === t16Cust.name);
     assert.ok(custInAging, 'T16 customer must appear in aging matrix');
     assert.equal(custInAging.total_debt, '3500000.00', 'Customer total_debt in aging report matches');
     console.log('  -> PASS: T17 verified');

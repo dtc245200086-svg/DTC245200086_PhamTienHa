@@ -1,3 +1,26 @@
+/**
+ * @deprecated OBSOLETE TEST SUITE (Prompt 1 Release Foundation)
+ *
+ * This test suite asserts legacy pre-P1 behavior where Credit Notes created
+ * fake "CREDIT_NOTE" method entries in the public.payments cash ledger.
+ *
+ * Under canonical P0/P1.1 financial integrity rules (FIND-01, FIND-P0-AUD-01):
+ * 1. public.payments represents REAL CASH movements only (CASH, BANK_TRANSFER, CARD).
+ * 2. Credit Note adjustments reduce receivables via invoice.adjusted_total and create
+ *    refund obligations in public.refund_payables, NEVER inserting fake payment rows.
+ *
+ * Superseded by:
+ * - scripts/p1-refund-ledger-test.mjs (P1.1 Refund Ledger & Invariant Testing)
+ * - scripts/p1_2-payment-allocation-test.mjs (P1.2 Payment Allocation & Integrity)
+ *
+ * To prevent false CI failures, this script logs the deprecation reason and exits gracefully.
+ */
+
+console.log('[DEPRECATED] scripts/remediation-verification.mjs is OBSOLETE and superseded by scripts/p1-refund-ledger-test.mjs.');
+console.log('[DEPRECATED] Reason: F-02 asserts invalid legacy CREDIT_NOTE payment method in cash ledger.');
+console.log('[DEPRECATED] Skipping obsolete test execution.');
+process.exit(0);
+
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';

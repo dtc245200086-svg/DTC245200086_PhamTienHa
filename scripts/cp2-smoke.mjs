@@ -1,12 +1,29 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 
-const baseUrl = process.env.CP2_BASE_URL || 'http://127.0.0.1:8000';
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+if (!process.env.ADMIN_PASSWORD || !process.env.STAFF_PASSWORD) {
+  try {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    for (const line of envContent.split(/\r?\n/)) {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const val = match[2].trim();
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  } catch (err) {}
+}
+
+const baseUrl = process.env.CP2_BASE_URL || 'https://localhost';
 const adminPassword = process.env.ADMIN_PASSWORD;
 const staffPassword = process.env.STAFF_PASSWORD;
 const persistenceName = process.env.CP2_PERSISTENCE_NAME;
-const secureCookieExpected = process.env.CP2_EXPECT_SECURE_COOKIE === 'true';
-const publicHealthBlocked = process.env.CP2_EXPECT_PUBLIC_HEALTH_BLOCKED === 'true';
+const secureCookieExpected = process.env.CP2_EXPECT_SECURE_COOKIE !== undefined ? process.env.CP2_EXPECT_SECURE_COOKIE === 'true' : baseUrl.startsWith('https');
+const publicHealthBlocked = process.env.CP2_EXPECT_PUBLIC_HEALTH_BLOCKED !== undefined ? process.env.CP2_EXPECT_PUBLIC_HEALTH_BLOCKED === 'true' : baseUrl.startsWith('https');
 
 if (!adminPassword || !staffPassword) {
   throw new Error('ADMIN_PASSWORD and STAFF_PASSWORD must be set in the test environment.');
@@ -40,7 +57,16 @@ class ApiClient {
       this.setCookie = setCookie;
       this.cookie = setCookie.split(';', 1)[0];
     }
-    const payload = response.status === 204 ? null : await response.json();
+    let payload = null;
+    if (response.status !== 204) {
+      const text = await response.text();
+      try {
+        payload = JSON.parse(text);
+      } catch (e) {
+        console.error(`Failed to parse JSON for ${method} ${path} -> HTTP ${response.status}: ${text.slice(0, 200)}`);
+        throw e;
+      }
+    }
     return { response, payload };
   }
 }

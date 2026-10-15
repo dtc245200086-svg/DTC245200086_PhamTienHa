@@ -1,0 +1,190 @@
+name: billing-prod
+
+# ============================================================================
+# BILLING_ONE EXTENDED — PRODUCTION DOCKER COMPOSE CONFIGURATION
+# File: docker-compose.production.yml
+# ============================================================================
+# PRODUCTION HARDENING HIGHLIGHTS:
+# 1. Least Privilege: Core app uses billing_app role; migrations run on startup.
+# 2. Network Isolation: PostgreSQL is strictly in internal db_net (no host port).
+# 3. Public Boundary: Only Nginx listens on 80/443; internal apps communicate via private Docker nets.
+# 4. Profiles: Admin (pgAdmin) and Ops (monitoring) services isolated under profiles.
+# ============================================================================
+
+services:
+  postgres:
+    image: postgres:16.15-trixie
+    environment:
+      POSTGRES_DB: billing
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      BILLING_APP_PASSWORD: ${BILLING_APP_PASSWORD:?Set BILLING_APP_PASSWORD in .env.production}
+      BILLING_READONLY_PASSWORD: ${BILLING_READONLY_PASSWORD:?Set BILLING_READONLY_PASSWORD in .env.production}
+      EXPORTER_PASSWORD: ${EXPORTER_PASSWORD:?Set EXPORTER_PASSWORD in .env.production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env.production}
+      STAFF_PASSWORD: ${STAFF_PASSWORD:?Set STAFF_PASSWORD in .env.production}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - db_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: always
+
+  migration:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: billing
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - ./db/migrations:/app/db/migrations:ro
+      - ./scripts:/app/scripts:ro
+    entrypoint: ["node", "/app/scripts/migrate.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - db_net
+    restart: "no"
+
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: billing
+      DB_USER: billing_app
+      DB_PASSWORD: ${BILLING_APP_PASSWORD:?Set BILLING_APP_PASSWORD in .env.production}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env.production}
+      SESSION_COOKIE_SECURE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    networks:
+      - db_net
+      - app_net
+      - monitoring_net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: always
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.30.5-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - edge_net
+      - app_net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    restart: always
+
+  # --- OPTIONAL OPS / MONITORING PROFILE ---
+  pgadmin:
+    profiles: ["admin"]
+    image: dpage/pgadmin4:9.18.0
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?Set PGADMIN_DEFAULT_EMAIL in .env.production}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Set PGADMIN_DEFAULT_PASSWORD in .env.production}
+      PGADMIN_LISTEN_PORT: "5050"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5050:5050"
+    networks:
+      - db_net
+      - admin_net
+    restart: unless-stopped
+
+  prometheus:
+    profiles: ["ops"]
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - admin_net
+      - monitoring_net
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["ops"]
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env.production}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - admin_net
+      - monitoring_net
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  edge_net:
+    internal: false
+  app_net:
+    internal: true
+  db_net:
+    internal: true
+  admin_net:
+    internal: false
+  monitoring_net:
+    internal: true
+
+volumes:
+  pgdata:
+  pgadmin_data:
+  prometheus_data:
+  grafana_data:
