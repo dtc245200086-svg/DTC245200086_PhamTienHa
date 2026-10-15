@@ -1,7 +1,8 @@
 const express = require('express');
+const { inTransaction } = require('../db');
 const { AppError, asyncRoute } = require('../errors');
 const { requireObject, requireText } = require('../validation');
-const { requireAuth, requireRole } = require('./auth');
+const { requireAuth, requireRole, requirePermission } = require('./auth');
 const { recordAudit } = require('../audit');
 
 function settingsRouter(pool) {
@@ -33,7 +34,7 @@ function settingsRouter(pool) {
   }));
 
   // PUT /api/settings
-  router.put('/', requireRole('admin'), asyncRoute(async (req, res) => {
+  router.put('/', requirePermission('settings.manage'), asyncRoute(async (req, res) => {
     requireObject(req.body);
     const companyName = requireText(req.body.company_name, 'company_name', 255);
     const taxCode = requireText(req.body.tax_code, 'tax_code', 32);
@@ -43,34 +44,39 @@ function settingsRouter(pool) {
     const taxProvider = requireText(req.body.tax_provider, 'tax_provider', 100, { optional: true });
     const hsmSerial = requireText(req.body.hsm_serial, 'hsm_serial', 100, { optional: true });
 
-    const result = await pool.query(
-      `INSERT INTO public.company_settings
-        (id, company_name, tax_code, address, bank_name, bank_account, tax_provider, hsm_serial, updated_at)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, now())
-       ON CONFLICT (id) DO UPDATE
-       SET company_name = EXCLUDED.company_name,
-           tax_code = EXCLUDED.tax_code,
-           address = EXCLUDED.address,
-           bank_name = EXCLUDED.bank_name,
-           bank_account = EXCLUDED.bank_account,
-           tax_provider = EXCLUDED.tax_provider,
-           hsm_serial = EXCLUDED.hsm_serial,
-           updated_at = now()
-       RETURNING id, company_name, tax_code, address, bank_name, bank_account, tax_provider, hsm_serial, updated_at`,
-      [companyName, taxCode, address, bankName, bankAccount, taxProvider, hsmSerial]
-    );
+    const settings = await inTransaction(async (client) => {
+      const result = await client.query(
+        `INSERT INTO public.company_settings
+          (id, company_name, tax_code, address, bank_name, bank_account, tax_provider, hsm_serial, updated_at)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, now())
+         ON CONFLICT (id) DO UPDATE
+         SET company_name = EXCLUDED.company_name,
+             tax_code = EXCLUDED.tax_code,
+             address = EXCLUDED.address,
+             bank_name = EXCLUDED.bank_name,
+             bank_account = EXCLUDED.bank_account,
+             tax_provider = EXCLUDED.tax_provider,
+             hsm_serial = EXCLUDED.hsm_serial,
+             updated_at = now()
+         RETURNING id, company_name, tax_code, address, bank_name, bank_account, tax_provider, hsm_serial, updated_at`,
+        [companyName, taxCode, address, bankName, bankAccount, taxProvider, hsmSerial]
+      );
 
-    const settings = result.rows[0];
+      const saved = result.rows[0];
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'settings',
-      action: 'SETTINGS_UPDATED',
-      targetRef: 'COMPANY_SETTINGS',
-      severity: 'WARNING',
-      summary: `Cập nhật thông tin pháp nhân doanh nghiệp: ${settings.company_name}`,
-      metadata: settings
+      await recordAudit(client, {
+        user: req.user,
+        ip: req.ip,
+        module: 'settings',
+        action: 'SETTINGS_UPDATED',
+        targetRef: 'COMPANY_SETTINGS',
+        severity: 'WARNING',
+        summary: `Cập nhật thông tin pháp nhân doanh nghiệp: ${saved.company_name}`,
+        metadata: saved,
+        throwOnError: true
+      });
+
+      return saved;
     });
 
     res.json({ settings });

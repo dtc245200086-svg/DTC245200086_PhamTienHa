@@ -1,18 +1,23 @@
 const express = require('express');
 const { asyncRoute } = require('../errors');
-const { parsePage } = require('../validation');
-const { requireAuth } = require('./auth');
+const { parsePage, requireDate } = require('../validation');
+const { requireAuth, requirePermission } = require('./auth');
 const { computeAuditHash } = require('../audit');
+const { sendCsvResponse } = require('../csv');
 
 function auditRouter(pool) {
   const router = express.Router();
   router.use(requireAuth);
 
   // GET /api/audit-logs (or /api/audit)
-  router.get('/', asyncRoute(async (req, res) => {
-    const { page, limit, offset } = parsePage(req.query);
+  router.get('/', requirePermission('audit.view'), asyncRoute(async (req, res) => {
+    const { page, limit, page_size, offset } = parsePage(req.query);
     const severity = req.query.severity ? req.query.severity : null;
     const moduleName = req.query.module ? req.query.module : null;
+    const action = req.query.action ? req.query.action : null;
+    const username = req.query.username || req.query.actor_name || null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const pattern = search ? `%${search}%` : null;
 
@@ -24,17 +29,25 @@ function auditRouter(pool) {
          FROM public.audit_logs
          WHERE ($1::text IS NULL OR severity = $1)
            AND ($2::text IS NULL OR module = $2)
-           AND ($3::text IS NULL OR actor_name ILIKE $3 OR action ILIKE $3 OR summary ILIKE $3 OR target_ref ILIKE $3)
-         ORDER BY id DESC LIMIT $4 OFFSET $5`,
-        [severity, moduleName, pattern, limit, offset]
+           AND ($3::text IS NULL OR action = $3)
+           AND ($4::text IS NULL OR actor_name ILIKE $4)
+           AND ($5::date IS NULL OR timestamp::date >= $5)
+           AND ($6::date IS NULL OR timestamp::date <= $6)
+           AND ($7::text IS NULL OR actor_name ILIKE $7 OR action ILIKE $7 OR summary ILIKE $7 OR target_ref ILIKE $7 OR module ILIKE $7)
+         ORDER BY id DESC LIMIT $8 OFFSET $9`,
+        [severity, moduleName, action, username ? `%${username}%` : null, from, to, pattern, limit, offset]
       ),
       pool.query(
         `SELECT count(*)::text AS total
          FROM public.audit_logs
          WHERE ($1::text IS NULL OR severity = $1)
            AND ($2::text IS NULL OR module = $2)
-           AND ($3::text IS NULL OR actor_name ILIKE $3 OR action ILIKE $3 OR summary ILIKE $3 OR target_ref ILIKE $3)`,
-        [severity, moduleName, pattern]
+           AND ($3::text IS NULL OR action = $3)
+           AND ($4::text IS NULL OR actor_name ILIKE $4)
+           AND ($5::date IS NULL OR timestamp::date >= $5)
+           AND ($6::date IS NULL OR timestamp::date <= $6)
+           AND ($7::text IS NULL OR actor_name ILIKE $7 OR action ILIKE $7 OR summary ILIKE $7 OR target_ref ILIKE $7 OR module ILIKE $7)`,
+        [severity, moduleName, action, username ? `%${username}%` : null, from, to, pattern]
       )
     ]);
 
@@ -45,7 +58,54 @@ function auditRouter(pool) {
       prev_hash_preview: row.prev_hash ? `${row.prev_hash.slice(0, 16)}...${row.prev_hash.slice(-8)}` : null
     }));
 
-    res.json({ items: enriched, total: count.rows[0].total, page, limit });
+    res.json({ items: enriched, total: Number(count.rows[0].total), page, limit, page_size: limit });
+  }));
+
+  // GET /api/audit/export.csv (Server-side unpaginated Audit Logs CSV export)
+  router.get('/export.csv', requirePermission('audit.view'), asyncRoute(async (req, res) => {
+    const severity = req.query.severity ? req.query.severity : null;
+    const moduleName = req.query.module ? req.query.module : null;
+    const action = req.query.action ? req.query.action : null;
+    const username = req.query.username || req.query.actor_name || null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const pattern = search ? `%${search}%` : null;
+
+    const items = await pool.query(
+      `SELECT id, timestamp, actor_id, actor_name, actor_role, ip_address,
+              module, action, target_ref, severity, summary, hash, created_at
+       FROM public.audit_logs
+       WHERE ($1::text IS NULL OR severity = $1)
+         AND ($2::text IS NULL OR module = $2)
+         AND ($3::text IS NULL OR action = $3)
+         AND ($4::text IS NULL OR actor_name ILIKE $4)
+         AND ($5::date IS NULL OR timestamp::date >= $5)
+         AND ($6::date IS NULL OR timestamp::date <= $6)
+         AND ($7::text IS NULL OR actor_name ILIKE $7 OR action ILIKE $7 OR summary ILIKE $7 OR target_ref ILIKE $7 OR module ILIKE $7)
+       ORDER BY id DESC`,
+      [severity, moduleName, action, username ? `%${username}%` : null, from, to, pattern]
+    );
+
+    const headers = ['Thời điểm', 'Người thực hiện', 'Vai trò', 'Hành động', 'Phân hệ', 'Đối tượng', 'Mã băm SHA-256', 'Mức độ', 'Địa chỉ IP'];
+    const rows = items.rows.map(log => [
+      log.timestamp ? new Date(log.timestamp).toLocaleString('vi-VN') : '',
+      log.actor_name || `User #${log.actor_id || ''}`,
+      log.actor_role || '',
+      log.action || '',
+      log.module || '',
+      log.target_ref || '',
+      log.hash || '',
+      log.severity || 'INFO',
+      log.ip_address || ''
+    ]);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    sendCsvResponse(res, {
+      filename: `nhat_ky_kiem_toan_${dateStr}.csv`,
+      headers,
+      rows
+    });
   }));
 
   // Cryptographic Chain Verification Handler (Supports both GET and POST)
@@ -108,8 +168,8 @@ function auditRouter(pool) {
     });
   });
 
-  router.get('/verify', verifyHandler);
-  router.post('/verify', verifyHandler);
+  router.get('/verify', requirePermission('audit.view'), verifyHandler);
+  router.post('/verify', requirePermission('audit.view'), verifyHandler);
 
   return router;
 }

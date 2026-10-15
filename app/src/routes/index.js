@@ -11,9 +11,10 @@ const { adjustmentsRouter } = require('./adjustments');
 const { refundsRouter } = require('./refunds');
 const { recurringRouter } = require('./recurring');
 const { reconciliationRouter } = require('./reconciliation');
-const { rbacRouter } = require('./rbac');
+const { rbacRouter, rolesRouter, permissionsRouter } = require('./rbac');
 const { auditRouter } = require('./audit');
 const { settingsRouter } = require('./settings');
+const { usersRouter } = require('./users');
 
 function apiRouter(pool, cookieSecure) {
   const router = express.Router();
@@ -42,7 +43,13 @@ function apiRouter(pool, cookieSecure) {
   router.use('/reconciliation', reconciliationRouter(pool));
   router.use(reconciliationRouter(pool));
 
+  // RBAC, Roles, and Permissions
   router.use('/rbac', rbacRouter(pool));
+  router.use('/roles', rolesRouter(pool));
+  router.use('/permissions', permissionsRouter(pool));
+
+  // User Management (Admin only)
+  router.use('/users', usersRouter(pool));
 
   // Dual mounting for Audit
   router.use('/audit', auditRouter(pool));

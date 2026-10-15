@@ -14,6 +14,7 @@ function createApp(pool, { sessionSecret, cookieSecure }) {
   }
 
   const app = express();
+  app.locals.pool = pool;
   const PgSessionStore = connectPgSimple(session);
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
@@ -116,7 +117,11 @@ function createApp(pool, { sessionSecret, cookieSecure }) {
     }
 
     if (status >= 500) writeLog('error', 'error', { request_id: req.requestId, code, message: error.message, stack: error.stack });
-    res.status(status).json({ error: { code, message, request_id: req.requestId } });
+    const errorBody = { code, message, request_id: req.requestId };
+    if (error.details) errorBody.details = error.details;
+    if (error.customer_id) errorBody.customer_id = error.customer_id;
+    if (error.customer_status) errorBody.customer_status = error.customer_status;
+    res.status(status).json({ error: errorBody });
   });
 
   return app;

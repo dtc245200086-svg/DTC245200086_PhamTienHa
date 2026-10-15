@@ -16,10 +16,11 @@ ALTER TABLE public.customers DROP CONSTRAINT IF EXISTS customers_segment_check;
 ALTER TABLE public.customers ADD CONSTRAINT customers_segment_check 
     CHECK (segment IN ('Enterprise', 'SME', 'FDI', 'Retail', 'VIP'));
 
--- 3. UPDATE payments_method_check TO ALLOW CREDIT_NOTE AS NON-CASH SETTLEMENT
+-- 3. UPDATE payments_method_check TO CANONICAL PAYMENT METHODS (CASH, BANK_TRANSFER, CARD)
+-- Note: Non-cash Credit Notes are managed via invoice_adjustments and refund_payables, not payments.
 ALTER TABLE public.payments DROP CONSTRAINT IF EXISTS payments_method_check;
 ALTER TABLE public.payments ADD CONSTRAINT payments_method_check 
-    CHECK (method IN ('CASH', 'BANK_TRANSFER', 'CARD', 'CREDIT_NOTE'));
+    CHECK (method IN ('CASH', 'BANK_TRANSFER', 'CARD'));
 
 -- 4. EXTEND bank_transactions FOR UNAPPLIED CASH / OVERPAYMENT
 ALTER TABLE public.bank_transactions
@@ -85,8 +86,8 @@ JOIN public.permissions p ON p.code IN (
 WHERE r.code = 'ROLE_AUDITOR'
 ON CONFLICT (role_id, permission_id) DO NOTHING;
 
--- Grant permissions to billing_app role
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.audit_logs TO billing_app;
+-- Grant permissions to billing_app role (audit_logs is append-only)
+GRANT SELECT, INSERT ON public.audit_logs TO billing_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.role_permissions TO billing_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.permissions TO billing_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.roles TO billing_app;

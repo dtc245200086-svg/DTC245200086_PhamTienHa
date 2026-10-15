@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+if (!process.env.ADMIN_PASSWORD) {
+  try {
+    const envContent = fs.readFileSync('.env', 'utf8');
+    for (const line of envContent.split(/\r?\n/)) {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        const val = match[2].trim();
+        if (!process.env[key]) process.env[key] = val;
+      }
+    }
+  } catch (err) {}
+}
 
 const baseUrl = process.env.CP2_BASE_URL || 'https://localhost';
 const adminPassword = process.env.ADMIN_PASSWORD;

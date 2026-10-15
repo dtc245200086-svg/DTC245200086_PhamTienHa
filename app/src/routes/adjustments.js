@@ -1,9 +1,10 @@
 const express = require('express');
 const { AppError, asyncRoute } = require('../errors');
 const { inTransaction } = require('../db');
-const { parseId, parsePage, requireDecimal, requireObject, requireText } = require('../validation');
+const { parseId, parsePage, requireDate, requireDecimal, requireObject, requireText } = require('../validation');
 const { requireAuth, requireRole, requirePermission } = require('./auth');
 const { recordAudit } = require('../audit');
+const { sendCsvResponse } = require('../csv');
 
 const ADJUSTMENT_TYPES = new Set(['DISCOUNT', 'DECREASE_AMOUNT', 'SERVICE_RETURN', 'INFO_CORRECTION']);
 const TYPE_ALIAS_MAP = {
@@ -23,10 +24,16 @@ function adjustmentsRouter(pool) {
 
   // GET /api/adjustments
   router.get('/', asyncRoute(async (req, res) => {
-    const { page, limit, offset } = parsePage(req.query);
+    const { page, limit, page_size, offset } = parsePage(req.query);
     const rawInvoiceId = req.query.invoice_id || req.query.original_invoice_id;
     const invoiceId = rawInvoiceId ? parseId(rawInvoiceId, 'invoice_id') : null;
     const status = req.query.status ? req.query.status : null;
+    const rawType = req.query.type || req.query.adjustment_type;
+    const type = rawType ? (TYPE_ALIAS_MAP[rawType] || rawType) : null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const pattern = search ? `%${search}%` : null;
 
     const [items, count] = await Promise.all([
       pool.query(
@@ -47,19 +54,83 @@ function adjustmentsRouter(pool) {
          LEFT JOIN public.users u2 ON u2.id = a.approved_by
          WHERE ($1::bigint IS NULL OR a.original_invoice_id = $1)
            AND ($2::text IS NULL OR a.status = $2)
-         ORDER BY a.id DESC LIMIT $3 OFFSET $4`,
-        [invoiceId, status, limit, offset]
+           AND ($3::text IS NULL OR a.adjustment_type = $3)
+           AND ($4::date IS NULL OR a.created_at::date >= $4)
+           AND ($5::date IS NULL OR a.created_at::date <= $5)
+           AND ($6::text IS NULL OR a.credit_note_no ILIKE $6 OR i.invoice_no ILIKE $6 OR c.name ILIKE $6 OR a.reason ILIKE $6 OR a.adjustment_type ILIKE $6 OR a.status ILIKE $6)
+         ORDER BY a.id DESC LIMIT $7 OFFSET $8`,
+        [invoiceId, status, type, from, to, pattern, limit, offset]
       ),
       pool.query(
         `SELECT count(*)::text AS total
          FROM public.invoice_adjustments a
+         JOIN public.invoices i ON i.id = a.original_invoice_id
+         JOIN public.customers c ON c.id = i.customer_id
          WHERE ($1::bigint IS NULL OR a.original_invoice_id = $1)
-           AND ($2::text IS NULL OR a.status = $2)`,
-        [invoiceId, status]
+           AND ($2::text IS NULL OR a.status = $2)
+           AND ($3::text IS NULL OR a.adjustment_type = $3)
+           AND ($4::date IS NULL OR a.created_at::date >= $4)
+           AND ($5::date IS NULL OR a.created_at::date <= $5)
+           AND ($6::text IS NULL OR a.credit_note_no ILIKE $6 OR i.invoice_no ILIKE $6 OR c.name ILIKE $6 OR a.reason ILIKE $6 OR a.adjustment_type ILIKE $6 OR a.status ILIKE $6)`,
+        [invoiceId, status, type, from, to, pattern]
       )
     ]);
 
-    res.json({ items: items.rows, total: count.rows[0].total, page, limit });
+    res.json({ items: items.rows, total: Number(count.rows[0].total), page, limit, page_size: limit });
+  }));
+
+  // GET /api/adjustments/export.csv (Server-side unpaginated CSV export with exact query filter consistency)
+  router.get('/export.csv', asyncRoute(async (req, res) => {
+    const rawInvoiceId = req.query.invoice_id || req.query.original_invoice_id;
+    const invoiceId = rawInvoiceId ? parseId(rawInvoiceId, 'invoice_id') : null;
+    const status = req.query.status ? req.query.status : null;
+    const rawType = req.query.type || req.query.adjustment_type;
+    const type = rawType ? (TYPE_ALIAS_MAP[rawType] || rawType) : null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const pattern = search ? `%${search}%` : null;
+
+    const items = await pool.query(
+      `SELECT a.id, a.credit_note_no,
+              i.invoice_no AS original_invoice_no,
+              c.name AS customer_name, c.tax_code AS customer_tax_code,
+              a.adjustment_type, a.amount::text, a.vat_amount::text,
+              a.total_amount::text, a.reason, a.status, a.created_at
+       FROM public.invoice_adjustments a
+       JOIN public.invoices i ON i.id = a.original_invoice_id
+       JOIN public.customers c ON c.id = i.customer_id
+       WHERE ($1::bigint IS NULL OR a.original_invoice_id = $1)
+         AND ($2::text IS NULL OR a.status = $2)
+         AND ($3::text IS NULL OR a.adjustment_type = $3)
+         AND ($4::date IS NULL OR a.created_at::date >= $4)
+         AND ($5::date IS NULL OR a.created_at::date <= $5)
+         AND ($6::text IS NULL OR a.credit_note_no ILIKE $6 OR i.invoice_no ILIKE $6 OR c.name ILIKE $6 OR a.reason ILIKE $6 OR a.adjustment_type ILIKE $6 OR a.status ILIKE $6)
+       ORDER BY a.id DESC`,
+      [invoiceId, status, type, from, to, pattern]
+    );
+
+    const headers = ['Mã biên bản', 'Hóa đơn gốc', 'Khách hàng', 'MST', 'Loại nghiệp vụ', 'Số tiền (VND)', 'Thuế VAT (VND)', 'Tổng điều chỉnh (VND)', 'Lý do', 'Trạng thái', 'Ngày lập'];
+    const rows = items.rows.map(adj => [
+      adj.credit_note_no || '',
+      adj.original_invoice_no || '',
+      adj.customer_name || '',
+      adj.customer_tax_code || '',
+      adj.adjustment_type || '',
+      adj.amount || '0',
+      adj.vat_amount || '0',
+      adj.total_amount || adj.amount || '0',
+      adj.reason || '',
+      adj.status || '',
+      adj.created_at ? new Date(adj.created_at).toISOString().slice(0, 10) : ''
+    ]);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    sendCsvResponse(res, {
+      filename: `bien_ban_dieu_chinh_${dateStr}.csv`,
+      headers,
+      rows
+    });
   }));
 
   // GET /api/adjustments/:id
@@ -143,18 +214,21 @@ function adjustmentsRouter(pool) {
          RETURNING id, credit_note_no, original_invoice_id, adjustment_type, amount::text, vat_amount::text, total_amount::text, reason, status, created_at`,
         [creditNoteNo, invoiceId, normalizedType, amount, vatRate, vatAmount, totalAmount, reason, notes, req.user.id]
       );
-      return result.rows[0];
-    });
+      const newAdj = result.rows[0];
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'adjustments',
-      action: 'CREDIT_NOTE_CREATED',
-      targetRef: created.credit_note_no,
-      severity: 'INFO',
-      summary: `Tạo dự thảo biên bản điều chỉnh ${created.credit_note_no} cho hóa đơn #${invoiceId} (${created.total_amount} ₫)`,
-      metadata: created
+      await recordAudit(client, {
+        user: req.user,
+        ip: req.ip,
+        module: 'adjustments',
+        action: 'CREDIT_NOTE_CREATED',
+        targetRef: newAdj.credit_note_no,
+        severity: 'INFO',
+        summary: `Tạo dự thảo biên bản điều chỉnh ${newAdj.credit_note_no} cho hóa đơn #${invoiceId} (${newAdj.total_amount} ₫)`,
+        metadata: newAdj,
+        throwOnError: true
+      });
+
+      return newAdj;
     });
 
     res.status(201).json({
@@ -170,27 +244,32 @@ function adjustmentsRouter(pool) {
   // POST /api/adjustments/:id/approve
   router.post('/:id/approve', requirePermission('adjustment.approve'), asyncRoute(async (req, res) => {
     const id = parseId(req.params.id);
-    const updated = await pool.query(
-      `UPDATE public.invoice_adjustments
-       SET status = 'APPROVED', approved_by = $2, approved_at = now()
-       WHERE id = $1 AND status = 'DRAFT'
-       RETURNING id, credit_note_no, original_invoice_id, total_amount::text, status, approved_at`,
-      [id, req.user.id]
-    );
-    if (!updated.rowCount) {
-      throw new AppError(404, 'ADJUSTMENT_NOT_DRAFT', 'Adjustment was not found or is not in DRAFT status.');
-    }
-    const adjustment = updated.rows[0];
+    const adjustment = await inTransaction(async (client) => {
+      const updated = await client.query(
+        `UPDATE public.invoice_adjustments
+         SET status = 'APPROVED', approved_by = $2, approved_at = now()
+         WHERE id = $1 AND status = 'DRAFT'
+         RETURNING id, credit_note_no, original_invoice_id, total_amount::text, status, approved_at`,
+        [id, req.user.id]
+      );
+      if (!updated.rowCount) {
+        throw new AppError(404, 'ADJUSTMENT_NOT_DRAFT', 'Adjustment was not found or is not in DRAFT status.');
+      }
+      const approvedAdj = updated.rows[0];
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'adjustments',
-      action: 'ADJUSTMENT_APPROVED',
-      targetRef: adjustment.credit_note_no,
-      severity: 'INFO',
-      summary: `Phê duyệt biên bản điều chỉnh ${adjustment.credit_note_no}`,
-      metadata: adjustment
+      await recordAudit(client, {
+        user: req.user,
+        ip: req.ip,
+        module: 'adjustments',
+        action: 'ADJUSTMENT_APPROVED',
+        targetRef: approvedAdj.credit_note_no,
+        severity: 'INFO',
+        summary: `Phê duyệt biên bản điều chỉnh ${approvedAdj.credit_note_no}`,
+        metadata: approvedAdj,
+        throwOnError: true
+      });
+
+      return approvedAdj;
     });
 
     res.json({ adjustment });
@@ -299,24 +378,27 @@ function adjustmentsRouter(pool) {
         [id]
       );
 
-      return {
+      const processResult = {
         adjustment: { ...adj, status: 'PROCESSED' },
         invoice: updatedInvRes.rows[0],
         ar_reduction: arReduction.toFixed(2),
         refund_payable: refundPayable.toFixed(2),
         refund: refundRecord
       };
-    });
 
-    await recordAudit(pool, {
-      user: req.user,
-      ip: req.ip,
-      module: 'adjustments',
-      action: 'ADJUSTMENT_PROCESSED',
-      targetRef: result.adjustment.credit_note_no,
-      severity: 'INFO',
-      summary: `Xử lý áp dụng Credit Note ${result.adjustment.credit_note_no}: Giảm trừ công nợ ${result.ar_reduction} ₫ (Khoản phải hoàn: ${result.refund_payable} ₫) cho hóa đơn ${result.invoice.invoice_no}`,
-      metadata: result
+      await recordAudit(client, {
+        user: req.user,
+        ip: req.ip,
+        module: 'adjustments',
+        action: 'ADJUSTMENT_PROCESSED',
+        targetRef: processResult.adjustment.credit_note_no,
+        severity: 'INFO',
+        summary: `Xử lý áp dụng Credit Note ${processResult.adjustment.credit_note_no}: Giảm trừ công nợ ${processResult.ar_reduction} ₫ (Khoản phải hoàn: ${processResult.refund_payable} ₫) cho hóa đơn ${processResult.invoice.invoice_no}`,
+        metadata: processResult,
+        throwOnError: true
+      });
+
+      return processResult;
     });
 
     res.json({
