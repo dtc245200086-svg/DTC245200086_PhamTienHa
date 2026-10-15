@@ -7,6 +7,8 @@ const { requireAuth, requirePermission } = require('./auth');
 const { paymentsAmountVnd } = require('../metrics');
 const { recordAudit } = require('../audit');
 const { PaymentService } = require('../services/paymentService');
+const { docTienBangChu, renderPaymentReceiptHtml } = require('../services/documentService');
+const { sendCsvResponse } = require('../csv');
 
 const METHODS = new Set(['CASH', 'BANK_TRANSFER', 'CARD']);
 
@@ -72,7 +74,7 @@ function paymentsRouter(pool) {
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
 
     const result = await inTransaction(async (client) => {
-      return await PaymentService.createPayment(client, {
+      const payResult = await PaymentService.createPayment(client, {
         invoiceId,
         amount,
         method,
@@ -85,6 +87,23 @@ function paymentsRouter(pool) {
         allocations: [{ invoiceId, amount }],
         idempotencyKey
       });
+
+      if (!payResult.is_idempotent_replay) {
+        const targetInvoice = payResult.updated_invoices[0] || {};
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payments',
+          action: 'PAYMENT_RECORDED',
+          targetRef: targetInvoice.invoice_no || `#${invoiceId}`,
+          severity: 'INFO',
+          summary: `Ghi nhận thanh toán ${payResult.payment.amount} ₫ cho hóa đơn ${targetInvoice.invoice_no || `#${invoiceId}`} (${payResult.payment.method})`,
+          metadata: payResult.payment,
+          throwOnError: true
+        });
+      }
+
+      return payResult;
     });
 
     if (!result.is_idempotent_replay) {
@@ -95,19 +114,6 @@ function paymentsRouter(pool) {
         user: req.user.username,
         invoice_id: invoiceId,
         payment_id: result.payment.id
-      });
-
-      const targetInvoice = result.updated_invoices[0] || {};
-
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payments',
-        action: 'PAYMENT_RECORDED',
-        targetRef: targetInvoice.invoice_no || `#${invoiceId}`,
-        severity: 'INFO',
-        summary: `Ghi nhận thanh toán ${result.payment.amount} ₫ cho hóa đơn ${targetInvoice.invoice_no || `#${invoiceId}`} (${result.payment.method})`,
-        metadata: result.payment
       });
     }
 
@@ -141,7 +147,7 @@ function paymentsRouter(pool) {
     if (!METHODS.has(method)) throw new AppError(400, 'INVALID_PAYMENT_METHOD', 'method must be CASH, BANK_TRANSFER, or CARD.');
 
     const result = await inTransaction(async (client) => {
-      return await PaymentService.createPayment(client, {
+      const payResult = await PaymentService.createPayment(client, {
         customerId,
         invoiceId,
         amount,
@@ -155,21 +161,26 @@ function paymentsRouter(pool) {
         allocations,
         idempotencyKey
       });
+
+      if (!payResult.is_idempotent_replay) {
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payments',
+          action: 'PAYMENT_CREATED',
+          targetRef: payResult.payment.reference || `#PAY-${payResult.payment.id}`,
+          severity: 'INFO',
+          summary: `Tạo khoản thanh toán ${payResult.payment.amount} ₫ (${payResult.payment.method}) - Đã phân bổ: ${payResult.allocated_total} ₫, Tiền chưa phân bổ: ${payResult.unapplied_amount} ₫`,
+          metadata: payResult.payment,
+          throwOnError: true
+        });
+      }
+
+      return payResult;
     });
 
     if (!result.is_idempotent_replay) {
       paymentsAmountVnd.inc(Number(result.payment.amount));
-
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payments',
-        action: 'PAYMENT_CREATED',
-        targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
-        severity: 'INFO',
-        summary: `Tạo khoản thanh toán ${result.payment.amount} ₫ (${result.payment.method}) - Đã phân bổ: ${result.allocated_total} ₫, Tiền chưa phân bổ: ${result.unapplied_amount} ₫`,
-        metadata: result.payment
-      });
     }
 
     res.status(result.is_idempotent_replay ? 200 : 201).json(result);
@@ -186,26 +197,29 @@ function paymentsRouter(pool) {
     }
 
     const result = await inTransaction(async (client) => {
-      return await PaymentService.allocatePayment(client, {
+      const allocResult = await PaymentService.allocatePayment(client, {
         paymentId,
         allocations,
         recordedBy: req.user.id,
         idempotencyKey
       });
-    });
 
-    if (!result.is_idempotent_replay) {
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payments',
-        action: 'PAYMENT_ALLOCATED',
-        targetRef: `#PAY-${paymentId}`,
-        severity: 'INFO',
-        summary: `Phân bổ ${result.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
-        metadata: result
-      });
-    }
+      if (!allocResult.is_idempotent_replay) {
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payments',
+          action: 'PAYMENT_ALLOCATED',
+          targetRef: `#PAY-${paymentId}`,
+          severity: 'INFO',
+          summary: `Phân bổ ${allocResult.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
+          metadata: allocResult,
+          throwOnError: true
+        });
+      }
+
+      return allocResult;
+    });
 
     res.status(result.is_idempotent_replay ? 200 : 201).json(result);
   }));
@@ -223,12 +237,28 @@ function paymentsRouter(pool) {
         throw new AppError(400, 'VALIDATION_ERROR', 'allocations array is required.');
       }
       const result = await inTransaction(async (client) => {
-        return await PaymentService.allocatePayment(client, {
+        const allocResult = await PaymentService.allocatePayment(client, {
           paymentId,
           allocations,
           recordedBy: req.user.id,
           idempotencyKey
         });
+
+        if (!allocResult.is_idempotent_replay) {
+          await recordAudit(client, {
+            user: req.user,
+            ip: req.ip,
+            module: 'payments',
+            action: 'PAYMENT_ALLOCATED',
+            targetRef: `#PAY-${paymentId}`,
+            severity: 'INFO',
+            summary: `Phân bổ ${allocResult.allocations.length} hóa đơn cho khoản thanh toán #${paymentId}`,
+            metadata: allocResult,
+            throwOnError: true
+          });
+        }
+
+        return allocResult;
       });
       return res.status(result.is_idempotent_replay ? 200 : 201).json(result);
     }
@@ -251,7 +281,7 @@ function paymentsRouter(pool) {
     }
 
     const result = await inTransaction(async (client) => {
-      return await PaymentService.createPayment(client, {
+      const payResult = await PaymentService.createPayment(client, {
         customerId,
         amount: totalAmount,
         method,
@@ -264,21 +294,26 @@ function paymentsRouter(pool) {
         allocations,
         idempotencyKey
       });
+
+      if (!payResult.is_idempotent_replay) {
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payments',
+          action: 'PAYMENT_ALLOCATED',
+          targetRef: payResult.payment.reference || `#PAY-${payResult.payment.id}`,
+          severity: 'INFO',
+          summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${payResult.allocations.length} hóa đơn`,
+          metadata: { total_amount: totalAmount, allocations: payResult.allocations },
+          throwOnError: true
+        });
+      }
+
+      return payResult;
     });
 
     if (!result.is_idempotent_replay) {
       paymentsAmountVnd.inc(Number(totalAmount));
-
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payments',
-        action: 'PAYMENT_ALLOCATED',
-        targetRef: result.payment.reference || `#PAY-${result.payment.id}`,
-        severity: 'INFO',
-        summary: `Phân bổ thanh toán tổng ${totalAmount} ₫ cho ${result.allocations.length} hóa đơn`,
-        metadata: { total_amount: totalAmount, allocations: result.allocations }
-      });
     }
 
     res.status(result.is_idempotent_replay ? 200 : 201).json({
@@ -290,11 +325,14 @@ function paymentsRouter(pool) {
 
   // GET /api/payments
   router.get('/payments', requireAuth, requirePermission('payment.read'), asyncRoute(async (req, res) => {
-    const { page, limit, offset } = parsePage(req.query);
+    const { page, limit, page_size, offset } = parsePage(req.query);
     const invoiceId = req.query.invoice_id ? parseId(req.query.invoice_id, 'invoice_id') : null;
     const customerId = req.query.customer_id ? parseId(req.query.customer_id, 'customer_id') : null;
+    const method = req.query.method ? req.query.method.trim() : null;
     const from = req.query.from ? requireDate(req.query.from, 'from') : null;
     const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const pattern = search ? `%${search}%` : null;
 
     const [items, count] = await Promise.all([
       pool.query(
@@ -315,8 +353,10 @@ function paymentsRouter(pool) {
            AND ($2::bigint IS NULL OR payment.customer_id = $2 OR customer.id = $2)
            AND ($3::date IS NULL OR payment.paid_at >= $3)
            AND ($4::date IS NULL OR payment.paid_at <= $4)
-         ORDER BY payment.paid_at DESC, payment.id DESC LIMIT $5 OFFSET $6`,
-        [invoiceId, customerId, from, to, limit, offset]
+           AND ($5::text IS NULL OR payment.method = $5)
+           AND ($6::text IS NULL OR invoice.invoice_no ILIKE $6 OR customer.name ILIKE $6 OR payment.reference ILIKE $6 OR payment.method ILIKE $6 OR payment.bank_name ILIKE $6 OR payment.bank_account ILIKE $6)
+         ORDER BY payment.paid_at DESC, payment.id DESC LIMIT $7 OFFSET $8`,
+        [invoiceId, customerId, from, to, method, pattern, limit, offset]
       ),
       pool.query(
         `SELECT count(*)::text AS total FROM public.payments AS payment
@@ -325,12 +365,70 @@ function paymentsRouter(pool) {
          WHERE ($1::bigint IS NULL OR payment.invoice_id = $1 OR payment.id IN (SELECT payment_id FROM public.payment_allocations WHERE invoice_id = $1))
            AND ($2::bigint IS NULL OR payment.customer_id = $2 OR customer.id = $2)
            AND ($3::date IS NULL OR payment.paid_at >= $3)
-           AND ($4::date IS NULL OR payment.paid_at <= $4)`,
-        [invoiceId, customerId, from, to]
+           AND ($4::date IS NULL OR payment.paid_at <= $4)
+           AND ($5::text IS NULL OR payment.method = $5)
+           AND ($6::text IS NULL OR invoice.invoice_no ILIKE $6 OR customer.name ILIKE $6 OR payment.reference ILIKE $6 OR payment.method ILIKE $6 OR payment.bank_name ILIKE $6 OR payment.bank_account ILIKE $6)`,
+        [invoiceId, customerId, from, to, method, pattern]
       )
     ]);
-    res.json({ items: items.rows, total: count.rows[0].total, page, limit });
+    res.json({ items: items.rows, total: Number(count.rows[0].total), page, limit, page_size: limit });
   }));
+
+  // GET /api/payments/export.csv (Server-side unpaginated CSV export with exact query filter consistency)
+  const paymentsExportHandler = asyncRoute(async (req, res) => {
+    const invoiceId = req.query.invoice_id ? parseId(req.query.invoice_id, 'invoice_id') : null;
+    const customerId = req.query.customer_id ? parseId(req.query.customer_id, 'customer_id') : null;
+    const method = req.query.method ? req.query.method.trim() : null;
+    const from = req.query.from ? requireDate(req.query.from, 'from') : null;
+    const to = req.query.to ? requireDate(req.query.to, 'to') : null;
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const pattern = search ? `%${search}%` : null;
+
+    const items = await pool.query(
+      `SELECT payment.id, payment.amount::text, payment.method, payment.paid_at, payment.reference,
+         payment.bank_name, payment.bank_account,
+         coalesce(customer.name, (SELECT name FROM public.customers WHERE id = payment.customer_id)) AS customer_name,
+         u.username AS recorded_by_username,
+         coalesce((SELECT sum(allocated_amount) FROM public.payment_allocations WHERE payment_id = payment.id), 0)::numeric(14, 2)::text AS allocated_amount,
+         (payment.amount - coalesce((SELECT sum(allocated_amount) FROM public.payment_allocations WHERE payment_id = payment.id), 0))::numeric(14, 2)::text AS unapplied_amount
+       FROM public.payments AS payment
+       LEFT JOIN public.invoices AS invoice ON invoice.id = payment.invoice_id
+       LEFT JOIN public.customers AS customer ON customer.id = coalesce(payment.customer_id, invoice.customer_id)
+       LEFT JOIN public.users AS u ON u.id = payment.recorded_by
+       WHERE ($1::bigint IS NULL OR payment.invoice_id = $1 OR payment.id IN (SELECT payment_id FROM public.payment_allocations WHERE invoice_id = $1))
+         AND ($2::bigint IS NULL OR payment.customer_id = $2 OR customer.id = $2)
+         AND ($3::date IS NULL OR payment.paid_at >= $3)
+         AND ($4::date IS NULL OR payment.paid_at <= $4)
+         AND ($5::text IS NULL OR payment.method = $5)
+         AND ($6::text IS NULL OR invoice.invoice_no ILIKE $6 OR customer.name ILIKE $6 OR payment.reference ILIKE $6 OR payment.method ILIKE $6 OR payment.bank_name ILIKE $6 OR payment.bank_account ILIKE $6)
+       ORDER BY payment.paid_at DESC, payment.id DESC`,
+      [invoiceId, customerId, from, to, method, pattern]
+    );
+
+    const headers = ['Ngày thanh toán', 'Khách hàng', 'Phương thức', 'Mã tham chiếu', 'Ngân hàng', 'Số tài khoản', 'Tổng tiền thu (VND)', 'Đã phân bổ (VND)', 'Chưa phân bổ (VND)', 'Người ghi nhận'];
+    const rows = items.rows.map(p => [
+      p.paid_at ? new Date(p.paid_at).toISOString().slice(0, 10) : '',
+      p.customer_name || 'Khách vãng lai',
+      p.method || '',
+      p.reference || '',
+      p.bank_name || '',
+      p.bank_account || '',
+      p.amount || '0',
+      p.allocated_amount || p.amount || '0',
+      p.unapplied_amount || '0',
+      p.recorded_by_username || ''
+    ]);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    sendCsvResponse(res, {
+      filename: `danh_sach_thanh_toan_${dateStr}.csv`,
+      headers,
+      rows
+    });
+  });
+
+  router.get('/payments/export.csv', requireAuth, requirePermission('payment.read'), paymentsExportHandler);
+  router.get('/export.csv', requireAuth, requirePermission('payment.read'), paymentsExportHandler);
 
   // GET /api/payments/:id
   router.get('/payments/:id', requireAuth, requirePermission('payment.read'), asyncRoute(async (req, res) => {
@@ -338,6 +436,50 @@ function paymentsRouter(pool) {
     const payment = await PaymentService.getPaymentDetails(pool, paymentId);
     res.json({ payment });
   }));
+
+  // GET /api/payments/:id/receipt (Server-side Payment Receipt Voucher HTML / JSON)
+  const handlePaymentReceipt = async (req, res) => {
+    const paymentId = parseId(req.params.id);
+    const payment = await PaymentService.getPaymentDetails(pool, paymentId);
+
+    let customer = {};
+    if (payment.customer_id) {
+      const custRes = await pool.query('SELECT * FROM public.customers WHERE id = $1', [payment.customer_id]);
+      customer = custRes.rows[0] || {};
+    } else {
+      customer = { name: payment.customer_name, tax_code: payment.customer_tax_code };
+    }
+
+    const companyRes = await pool.query('SELECT * FROM public.company_settings WHERE id = 1');
+    const company = companyRes.rows[0] || {};
+
+    const format = req.query.format || (req.headers.accept?.includes('application/json') ? 'json' : 'html');
+    if (format === 'json') {
+      return res.json({
+        document_type: 'PAYMENT_RECEIPT_MAU_01_TT',
+        standard: 'THONG_TU_200_2014_TT_BTC',
+        payment,
+        customer,
+        company,
+        amount_in_words: docTienBangChu(payment.amount),
+        generated_at: new Date().toISOString()
+      });
+    }
+
+    const html = renderPaymentReceiptHtml({
+      payment,
+      customer,
+      company,
+      allocations: payment.allocations
+    });
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  };
+
+  router.get('/payments/:id/receipt', requireAuth, requirePermission('payment.read'), asyncRoute(handlePaymentReceipt));
+  router.get('/payments/:id/voucher', requireAuth, requirePermission('payment.read'), asyncRoute(handlePaymentReceipt));
+  router.get('/payments/:id/print', requireAuth, requirePermission('payment.read'), asyncRoute(handlePaymentReceipt));
 
   return router;
 }

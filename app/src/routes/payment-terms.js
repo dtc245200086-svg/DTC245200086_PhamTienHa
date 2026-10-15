@@ -1,4 +1,5 @@
 const express = require('express');
+const { inTransaction } = require('../db');
 const { AppError, asyncRoute } = require('../errors');
 const { parseId, parsePage, requireObject, requireText } = require('../validation');
 const { requireAuth, requireRole, requirePermission } = require('./auth');
@@ -77,31 +78,36 @@ function paymentTermsRouter(pool) {
   router.post('/', requireRole('admin'), asyncRoute(async (req, res) => {
     const input = paymentTermInput(req.body);
     try {
-      if (input.isDefault) {
-        await pool.query('UPDATE public.payment_terms SET is_default = false WHERE is_default = true');
-      }
+      const term = await inTransaction(async (client) => {
+        if (input.isDefault) {
+          await client.query('UPDATE public.payment_terms SET is_default = false WHERE is_default = true');
+        }
 
-      const result = await pool.query(
-        `INSERT INTO public.payment_terms
-          (code, name, days, grace_period_days, late_penalty_rate, early_discount_percent, early_discount_days, description, is_default)
-         VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9)
-         RETURNING id, code, name, days, days AS net_days, grace_period_days,
-                   late_penalty_rate::text, early_discount_percent::text, early_discount_percent::text AS discount_percent,
-                   early_discount_days, early_discount_days AS discount_days,
-                   description, is_default, created_at`,
-        [input.code, input.name, input.days, input.gracePeriodDays, input.latePenaltyRate, input.earlyDiscountPercent, input.earlyDiscountDays, input.description, input.isDefault]
-      );
-      const term = result.rows[0];
+        const result = await client.query(
+          `INSERT INTO public.payment_terms
+            (code, name, days, grace_period_days, late_penalty_rate, early_discount_percent, early_discount_days, description, is_default)
+           VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric, $7, $8, $9)
+           RETURNING id, code, name, days, days AS net_days, grace_period_days,
+                     late_penalty_rate::text, early_discount_percent::text, early_discount_percent::text AS discount_percent,
+                     early_discount_days, early_discount_days AS discount_days,
+                     description, is_default, created_at`,
+          [input.code, input.name, input.days, input.gracePeriodDays, input.latePenaltyRate, input.earlyDiscountPercent, input.earlyDiscountDays, input.description, input.isDefault]
+        );
+        const created = result.rows[0];
 
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payment_terms',
-        action: 'PAYMENT_TERM_CREATED',
-        targetRef: term.code,
-        severity: 'INFO',
-        summary: `Tạo điều khoản thanh toán: ${term.name} (${term.code}) - Net ${term.days} ngày`,
-        metadata: term
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payment_terms',
+          action: 'PAYMENT_TERM_CREATED',
+          targetRef: created.code,
+          severity: 'INFO',
+          summary: `Tạo điều khoản thanh toán: ${created.name} (${created.code}) - Net ${created.days} ngày`,
+          metadata: created,
+          throwOnError: true
+        });
+
+        return created;
       });
 
       res.status(201).json({ term, payment_term: term });
@@ -115,36 +121,41 @@ function paymentTermsRouter(pool) {
     const id = parseId(req.params.id);
     const input = paymentTermInput(req.body);
     try {
-      const existing = await pool.query('SELECT id, code, is_default FROM public.payment_terms WHERE id = $1', [id]);
-      if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
+      const term = await inTransaction(async (client) => {
+        const existing = await client.query('SELECT id, code, is_default FROM public.payment_terms WHERE id = $1', [id]);
+        if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
 
-      if (input.isDefault) {
-        await pool.query('UPDATE public.payment_terms SET is_default = false WHERE id <> $1 AND is_default = true', [id]);
-      }
+        if (input.isDefault) {
+          await client.query('UPDATE public.payment_terms SET is_default = false WHERE id <> $1 AND is_default = true', [id]);
+        }
 
-      const result = await pool.query(
-        `UPDATE public.payment_terms
-         SET code = $2, name = $3, days = $4, grace_period_days = $5,
-             late_penalty_rate = $6::numeric, early_discount_percent = $7::numeric,
-             early_discount_days = $8, description = $9, is_default = $10
-         WHERE id = $1
-         RETURNING id, code, name, days, days AS net_days, grace_period_days,
-                   late_penalty_rate::text, early_discount_percent::text, early_discount_percent::text AS discount_percent,
-                   early_discount_days, early_discount_days AS discount_days,
-                   description, is_default, created_at`,
-        [id, input.code, input.name, input.days, input.gracePeriodDays, input.latePenaltyRate, input.earlyDiscountPercent, input.earlyDiscountDays, input.description, input.isDefault]
-      );
-      const term = result.rows[0];
+        const result = await client.query(
+          `UPDATE public.payment_terms
+           SET code = $2, name = $3, days = $4, grace_period_days = $5,
+               late_penalty_rate = $6::numeric, early_discount_percent = $7::numeric,
+               early_discount_days = $8, description = $9, is_default = $10
+           WHERE id = $1
+           RETURNING id, code, name, days, days AS net_days, grace_period_days,
+                     late_penalty_rate::text, early_discount_percent::text, early_discount_percent::text AS discount_percent,
+                     early_discount_days, early_discount_days AS discount_days,
+                     description, is_default, created_at`,
+          [id, input.code, input.name, input.days, input.gracePeriodDays, input.latePenaltyRate, input.earlyDiscountPercent, input.earlyDiscountDays, input.description, input.isDefault]
+        );
+        const updated = result.rows[0];
 
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payment_terms',
-        action: 'PAYMENT_TERM_UPDATED',
-        targetRef: term.code,
-        severity: 'INFO',
-        summary: `Cập nhật điều khoản thanh toán: ${term.name} (${term.code})`,
-        metadata: term
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payment_terms',
+          action: 'PAYMENT_TERM_UPDATED',
+          targetRef: updated.code,
+          severity: 'INFO',
+          summary: `Cập nhật điều khoản thanh toán: ${updated.name} (${updated.code})`,
+          metadata: updated,
+          throwOnError: true
+        });
+
+        return updated;
       });
 
       res.json({ term, payment_term: term });
@@ -156,32 +167,38 @@ function paymentTermsRouter(pool) {
   // POST /api/payment-terms/:id/default
   router.post('/:id/default', requireRole('admin'), asyncRoute(async (req, res) => {
     const id = parseId(req.params.id);
-    const existing = await pool.query('SELECT id, code, name FROM public.payment_terms WHERE id = $1', [id]);
-    if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
+    const term = await inTransaction(async (client) => {
+      const existing = await client.query('SELECT id, code, name FROM public.payment_terms WHERE id = $1', [id]);
+      if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
 
-    await pool.query('UPDATE public.payment_terms SET is_default = false WHERE is_default = true');
-    const result = await pool.query('UPDATE public.payment_terms SET is_default = true WHERE id = $1 RETURNING id, code, name, is_default', [id]);
+      await client.query('UPDATE public.payment_terms SET is_default = false WHERE is_default = true');
+      const result = await client.query('UPDATE public.payment_terms SET is_default = true WHERE id = $1 RETURNING id, code, name, is_default', [id]);
+      return result.rows[0];
+    });
 
-    res.json({ term: result.rows[0], payment_term: result.rows[0] });
+    res.json({ term, payment_term: term });
   }));
 
   // DELETE /api/payment-terms/:id
   router.delete('/:id', requireRole('admin'), asyncRoute(async (req, res) => {
     const id = parseId(req.params.id);
     try {
-      const existing = await pool.query('SELECT id, code, name FROM public.payment_terms WHERE id = $1', [id]);
-      if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
+      await inTransaction(async (client) => {
+        const existing = await client.query('SELECT id, code, name FROM public.payment_terms WHERE id = $1', [id]);
+        if (!existing.rowCount) throw new AppError(404, 'PAYMENT_TERM_NOT_FOUND', 'Payment term was not found.');
 
-      await pool.query('DELETE FROM public.payment_terms WHERE id = $1', [id]);
+        await client.query('DELETE FROM public.payment_terms WHERE id = $1', [id]);
 
-      await recordAudit(pool, {
-        user: req.user,
-        ip: req.ip,
-        module: 'payment_terms',
-        action: 'PAYMENT_TERM_DELETED',
-        targetRef: existing.rows[0].code,
-        severity: 'WARNING',
-        summary: `Xóa điều khoản thanh toán: ${existing.rows[0].name} (${existing.rows[0].code})`
+        await recordAudit(client, {
+          user: req.user,
+          ip: req.ip,
+          module: 'payment_terms',
+          action: 'PAYMENT_TERM_DELETED',
+          targetRef: existing.rows[0].code,
+          severity: 'WARNING',
+          summary: `Xóa điều khoản thanh toán: ${existing.rows[0].name} (${existing.rows[0].code})`,
+          throwOnError: true
+        });
       });
 
       res.status(204).end();
